@@ -1,0 +1,21 @@
+/**
+ * Client API route contract. Keep business requests under this namespace.
+ * Do not use bare `/api/*` paths in views or documentation.
+ */
+export const CLIENT_API_PREFIX = '/api/v1/client'
+
+export const clientApi = {
+  auth: {
+    login: `${CLIENT_API_PREFIX}/auth/login`,
+    register: `${CLIENT_API_PREFIX}/auth/register`,
+    refresh: `${CLIENT_API_PREFIX}/auth/refresh`,
+    logout: `${CLIENT_API_PREFIX}/auth/logout`,
+    passwordResetRequest: `${CLIENT_API_PREFIX}/auth/password/reset/request`,
+    passwordResetConfirm: `${CLIENT_API_PREFIX}/auth/password/reset/confirm`,
+  },
+  account: `${CLIENT_API_PREFIX}/users/me`,
+  games: `${CLIENT_API_PREFIX}/games`,
+  servers: `${CLIENT_API_PREFIX}/game-servers`,
+  tasks: `${CLIENT_API_PREFIX}/tasks`,
+  messages: `${CLIENT_API_PREFIX}/messages`,
+} as const

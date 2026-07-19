@@ -16,7 +16,7 @@
 ## 1. 获取任务中心数据
 
 ```http
-GET /api/tasks?category=all&date=2026-07-19
+GET /api/v1/client/tasks?category=all&date=2026-07-19
 Authorization: Bearer <accessToken>
 X-Request-Id: <clientRequestId>
 ```
@@ -86,14 +86,14 @@ X-Request-Id: <clientRequestId>
 查询签到日历：
 
 ```http
-GET /api/checkins?month=2026-07
+GET /api/v1/client/checkins?month=2026-07
 Authorization: Bearer <accessToken>
 ```
 
 签到请求：
 
 ```http
-POST /api/checkins
+POST /api/v1/client/checkins
 Authorization: Bearer <accessToken>
 Idempotency-Key: checkin_<userId>_2026-07-19
 Content-Type: application/json
@@ -135,7 +135,7 @@ Content-Type: application/json
 ## 3. 领取任务奖励
 
 ```http
-POST /api/tasks/{taskId}/claim
+POST /api/v1/client/tasks/{taskId}/claim
 Authorization: Bearer <accessToken>
 Idempotency-Key: claim_<userId>_<taskId>_<taskDate>
 Content-Type: application/json
@@ -170,7 +170,7 @@ Content-Type: application/json
 ## 4. 任务未读/可领取数量
 
 ```http
-GET /api/tasks/unread-count
+GET /api/v1/client/tasks/unread-count
 Authorization: Bearer <accessToken>
 ```
 
@@ -188,7 +188,7 @@ Authorization: Bearer <accessToken>
 对于观看直播、启动游戏、关注主播、下载游戏等任务，客户端只上报行为，服务端负责校验进度：
 
 ```http
-POST /api/tasks/events
+POST /api/v1/client/tasks/events
 Authorization: Bearer <accessToken>
 Idempotency-Key: event_<eventId>
 Content-Type: application/json

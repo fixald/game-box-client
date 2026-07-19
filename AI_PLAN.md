@@ -380,6 +380,153 @@ Content-Type: application/json
 90001 → 服务端异常
 ```
 
+## 个人中心/账号中心模块
+
+个人中心是登录用户管理账号、查看权益和维护游戏数据的统一入口。首页顶部展示当前账号摘要，点击头像或账号名称进入个人中心；未登录用户访问个人中心时跳转登录页。
+
+### 页面结构
+
+```text
+个人中心
+├── 账号概览：头像、昵称、脱敏账号、注册时间、账号状态
+├── 会员权益：SVIP等级、成长值、到期时间、权益入口
+├── 数据概览：积分、收藏游戏、最近玩过、下载记录、连续签到
+├── 我的游戏：最近玩过、收藏游戏、最近登录区服、启动记录
+├── 我的下载：下载中、已完成、失败、待更新、缓存清理
+├── 账号安全：修改密码、手机/邮箱绑定、实名认证、设备、登录记录
+├── 我的消息：系统、活动、任务、直播、游戏维护通知
+└── 其他设置：礼包记录、协议、隐私、客服、退出登录、注销账号
+```
+
+### 交互与安全规则
+
+- 首页右上角账号卡片进入个人中心，展示与服务端一致的用户缓存。
+- 修改头像、昵称、简介后同步更新首页账号摘要。
+- 修改密码可选择使其他设备 Token 失效；不保存明文密码。
+- 手机/邮箱绑定、换绑和实名认证由服务端验证码或风控流程完成。
+- 设备列表支持查看当前设备、最近登录时间和移除其他会话。
+- 退出登录调用服务端接口，清理 accessToken、refreshToken、用户缓存和敏感临时数据。
+- 注销账号必须二次确认并完成服务端验证，完成后旧 Token 全部失效。
+- 消息支持分类、未读数量、单条已读、全部已读和失效目标提示。
+
+### 推荐前端文件结构
+
+```text
+src/views/account/
+├── AccountView.vue
+├── AccountOverview.vue
+├── AccountSecurity.vue
+├── AccountGames.vue
+├── AccountDownloads.vue
+├── AccountMessages.vue
+└── AccountSettings.vue
+```
+
+### 推荐数据结构
+
+```ts
+interface CurrentUser {
+  id: string;
+  account: string;
+  accountMasked: string;
+  nickname: string;
+  avatarUrl?: string;
+  status: "normal" | "frozen" | "banned" | "pending_verification";
+  registeredAt: string;
+  vip: { level: number; name: string; growthValue: number; nextLevelValue?: number; expiresAt?: string };
+  security: { phoneMasked?: string; emailMasked?: string; realNameStatus: "unverified" | "pending" | "verified" };
+}
+
+interface AccountStats {
+  points: number;
+  favoriteGameCount: number;
+  recentGameCount: number;
+  downloadCount: number;
+  continuousCheckinDays: number;
+  unreadMessageCount: number;
+  claimableTaskCount: number;
+}
+```
+
+### 个人中心后端 API
+
+```text
+GET    /api/users/me
+PATCH  /api/users/me
+GET    /api/users/me/stats
+GET    /api/users/me/games/recent
+GET    /api/users/me/games/favorites
+POST   /api/users/me/games/:gameId/favorite
+DELETE /api/users/me/games/:gameId/favorite
+GET    /api/users/me/servers/recent
+GET    /api/users/me/downloads
+DELETE /api/users/me/downloads/:recordId
+GET    /api/users/me/security
+POST   /api/users/me/password/change
+POST   /api/users/me/phone/bind/send
+POST   /api/users/me/phone/bind/confirm
+POST   /api/users/me/email/bind/send
+POST   /api/users/me/email/bind/confirm
+GET    /api/users/me/devices
+DELETE /api/users/me/devices/:deviceId
+GET    /api/users/me/login-records
+GET    /api/messages
+POST   /api/messages/:id/read
+POST   /api/messages/read-all
+POST   /api/auth/logout
+POST   /api/users/me/deletion/request
+POST   /api/users/me/deletion/confirm
+```
+
+### 个人中心聚合返回示例
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "requestId": "req_account_001",
+  "data": {
+    "user": {
+      "id": "user_001",
+      "account": "player001",
+      "accountMasked": "pla***001",
+      "nickname": "玩家001",
+      "avatarUrl": "https://cdn.example.com/avatar.png",
+      "status": "normal",
+      "registeredAt": "2026-07-01T08:00:00Z",
+      "vip": { "level": 2, "name": "SVIP2", "growthValue": 1200, "nextLevelValue": 2000, "expiresAt": "2026-12-31T23:59:59Z" },
+      "security": { "phoneMasked": "138****0000", "emailMasked": "pla***@example.com", "realNameStatus": "unverified" }
+    },
+    "stats": { "points": 1280, "favoriteGameCount": 4, "recentGameCount": 8, "downloadCount": 3, "continuousCheckinDays": 6, "unreadMessageCount": 2, "claimableTaskCount": 1 }
+  }
+}
+```
+
+修改密码请求：
+
+```json
+{ "oldPassword": "<old-password>", "newPassword": "<new-password>", "passwordConfirmation": "<new-password>", "logoutOtherDevices": true }
+```
+
+退出登录请求：
+
+```json
+{ "refreshToken": "<refresh-token>", "deviceId": "device_xxx" }
+```
+
+建议错误码：
+
+```text
+12001 → 用户资料不存在
+12002 → 昵称或简介不符合规则
+12003 → 旧密码错误
+12004 → 验证码错误或过期
+12005 → 设备会话不存在
+12006 → 账号冻结/封禁
+12007 → 注销需要二次验证
+90001 → 服务端异常
+```
+
 ## 截图还原的产品功能范围（996 传奇盒子用户端）
 
 根据用户端截图，该产品不是单纯的游戏下载器，而是“传奇游戏大厅 + 直播社区 + 内容分发 + 新服推广 + 游戏启动器”的综合客户端。以下内容是从截图中识别出的功能规划；未被接口或产品文档确认的部分，均应视为待确认需求。

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
 import type { HomeChannel, HomeFeed, NewServer } from "../../types/home";
+import { getCurrentAccountInfo } from "../../api/account";
 import { clearSession, getCurrentAccount } from "../../utils/auth";
 
 const channels: Array<{ key: HomeChannel; label: string }> = [
@@ -54,6 +55,7 @@ const searchText = ref("");
 const bannerIndex = ref(0);
 const toast = ref("");
 const currentAccount = ref(getCurrentAccount());
+const accountLoading = ref(false);
 const now = ref(Date.now());
 const timer = window.setInterval(() => { now.value = Date.now(); }, 1000);
 
@@ -97,13 +99,27 @@ function logout() {
   window.location.hash = "#/login";
 }
 
+async function goAccount() {
+  if (accountLoading.value) return;
+  accountLoading.value = true;
+  try {
+    const result = await getCurrentAccountInfo();
+    if (result.user?.account) currentAccount.value = result.user.account;
+    window.location.hash = "#/account";
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "获取账户信息失败，请稍后重试");
+  } finally {
+    accountLoading.value = false;
+  }
+}
+
 onBeforeUnmount(() => window.clearInterval(timer));
 </script>
 
 <template>
   <div class="gamebox-shell">
     <aside class="gamebox-sidebar">
-      <div class="brand"><span class="brand-mark">996</span><span>传奇盒子</span></div>
+      <div class="brand"><span class="brand-mark">game</span><span>盒子</span></div>
       <nav class="side-nav" aria-label="主导航">
         <button v-for="item in navItems" :key="item.label" class="side-item" :class="{ active: activeNav === item.label }" @click="enterSection(item.label)">
           <span class="side-icon">{{ item.icon }}</span><span>{{ item.label }}</span><i v-if="item.badge && feed.taskUnreadCount" class="nav-badge">{{ feed.taskUnreadCount }}</i>
@@ -114,9 +130,9 @@ onBeforeUnmount(() => window.clearInterval(timer));
 
     <section class="gamebox-main">
       <header class="topbar">
-        <div class="window-actions"><button aria-label="返回" @click="notify('已经是首页')">‹</button><button aria-label="刷新" @click="notify('内容已刷新')">↻</button></div>
+        <div class="window-actions"><button aria-label="刷新" @click="notify('内容已刷新')">↻</button></div>
         <label class="search-box"><span>⌕</span><input v-model="searchText" placeholder="搜索游戏 / 主播 / 区服 / 礼包" /><kbd>⌘ K</kbd></label>
-        <div class="user-actions"><button class="message-button" @click="notify(`有 ${feed.messageUnreadCount} 条未读消息`)">♢<i v-if="feed.messageUnreadCount"></i></button><button class="account-button" @click="notify(`当前账号：${currentAccount}`)"><span class="avatar">{{ currentAccount.slice(0, 1).toUpperCase() }}</span><span class="account-name">{{ currentAccount }}</span></button><button class="logout-button" @click="logout">退出</button></div>
+        <div class="user-actions"><button class="message-button" @click="notify(`有 ${feed.messageUnreadCount} 条未读消息`)">♢<i v-if="feed.messageUnreadCount"></i></button><button class="account-button" :class="{ loading: accountLoading }" aria-label="个人中心" :disabled="accountLoading" @click="goAccount"><span class="avatar">{{ currentAccount.slice(0, 1).toUpperCase() }}</span></button><button class="logout-button" @click="logout">退出</button></div>
       </header>
 
       <main class="home-content">
@@ -156,8 +172,17 @@ button { border: 0; color: inherit; cursor: pointer; }
 @media (max-width: 1050px) { .home-content { padding: 0 24px 40px; }.hero-grid { grid-template-columns: 1fr; }.hero-promo { min-height: 220px; }.server-list, .game-list { grid-template-columns: 1fr; } }
 @media (max-width: 680px) { .gamebox-sidebar { width: 70px; flex-basis: 70px; }.brand { font-size: 8px; }.side-item { font-size: 9px; }.topbar { padding: 0 15px; gap: 10px; }.search-box { width: 100%; }.login-button { display: none; }.home-content { padding: 0 14px 30px; }.channel-tabs { gap: 18px; overflow-x: auto; }.hero-live { grid-template-columns: 1fr; }.live-art { min-height: 180px; }.hero-live-info { padding: 20px; }.server-card { padding: 12px; } }
 <style scoped>
-.account-button { display: flex; align-items: center; gap: 7px; padding: 0; background: transparent; color: #c6c7cd; font-size: 12px; }
-.account-button:hover { color: #e6c656; }
+.account-button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0 !important; outline: 0; appearance: none; -webkit-appearance: none; background: transparent !important; color: #c6c7cd; font-size: 12px; }
+.account-button,
+.account-button:hover,
+.account-button:focus,
+.account-button:focus-visible,
+.account-button:active { background: none !important; background-color: transparent !important; box-shadow: none; }
+.account-button:hover { color: #e6c656; background: transparent !important; }
+.account-button .avatar { width: 34px; height: 34px; border: 1px solid #4b4e5a; background: linear-gradient(145deg, #3b3f4c, #252832); color: #f2d36b; box-shadow: 0 3px 10px rgba(0, 0, 0, .28); transition: border-color .2s, box-shadow .2s, transform .2s; }
+.account-button:hover .avatar { border-color: #d8b84e; box-shadow: 0 0 0 3px rgba(216, 184, 78, .14), 0 4px 12px rgba(0, 0, 0, .35); transform: translateY(-1px); }
+.account-button.loading { cursor: wait; }
+.account-button.loading .avatar { opacity: .6; }
 .account-name { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .logout-button { padding: 6px 9px; color: #8f919b; background: transparent; border: 1px solid #383a44; border-radius: 4px; font-size: 10px; }
 .logout-button:hover { color: #e06f72; border-color: #754044; }

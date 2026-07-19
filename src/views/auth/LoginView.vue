@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
-import { saveMockSession } from "../../utils/auth";
+import { loginAccount } from "../../api/auth";
+import { saveSession } from "../../utils/auth";
 
 type LoginMode = "account" | "sms";
 const mode = ref<LoginMode>("account");
@@ -9,8 +10,9 @@ const password = ref("");
 const phone = ref("");
 const smsCode = ref("");
 const showPassword = ref(false);
-const rememberAccount = ref(false);
-const accountHistory = ref(["demo_player", "legend_user"]);
+const rememberAccount = ref(true);
+const ACCOUNT_HISTORY_KEY = "gamebox_account_history";
+const accountHistory = ref<string[]>(JSON.parse(localStorage.getItem(ACCOUNT_HISTORY_KEY) || "[]"));
 const showHistory = ref(false);
 const touched = ref(false);
 const submitting = ref(false);
@@ -27,7 +29,7 @@ const accountError = computed(() => {
 const passwordError = computed(() => {
   if (!touched.value && !password.value) return "";
   if (!password.value) return "请输入密码";
-  return password.value.length >= 6 ? "" : "密码长度不能少于 6 位";
+  return password.value.length >= 8 ? "" : "密码长度不能少于 8 位";
 });
 const phoneError = computed(() => {
   if (!touched.value && !phone.value) return "";
@@ -56,23 +58,34 @@ function sendCode() {
 function showNotice(value: string, type: "error" | "success" = "error") { message.value = value; messageType.value = type; }
 function goRegister() { window.location.hash = "#/register"; }
 function closePage() { window.location.hash = ""; }
-function forgotPassword() { showNotice("密码找回功能即将开放"); }
+function forgotPassword() { window.location.hash = "#/forgot-password"; }
 function customerService() { showNotice("客服咨询功能即将开放"); }
 async function submitLogin() {
   touched.value = true;
   message.value = "";
   if (!canSubmit.value) return;
   submitting.value = true;
-  await new Promise((resolve) => window.setTimeout(resolve, 700));
-  submitting.value = false;
-  if (mode.value === "account" && account.value === "demo_player" && password.value !== "123456") {
-    showNotice("账号或密码错误，请重新输入");
-    return;
+  try {
+    if (mode.value === "account") {
+      const result = await loginAccount(account.value.trim(), password.value, rememberAccount.value);
+      const currentAccount = result.user?.account || account.value.trim();
+      if (!accountHistory.value.includes(currentAccount)) {
+        accountHistory.value.unshift(currentAccount);
+        localStorage.setItem(ACCOUNT_HISTORY_KEY, JSON.stringify(accountHistory.value.slice(0, 10)));
+      }
+      saveSession(result.accessToken, currentAccount, rememberAccount.value);
+    } else {
+      // 短信登录接口尚未接入，保留现有页面提示。
+      showNotice("短信登录功能暂未接入", "error");
+      return;
+    }
+    showNotice("登录成功，正在进入盒子…", "success");
+    window.setTimeout(() => { window.location.hash = ""; }, 900);
+  } catch (error) {
+    showNotice(error instanceof Error ? error.message : "登录失败，请稍后重试");
+  } finally {
+    submitting.value = false;
   }
-  if (!accountHistory.value.includes(mode.value === "account" ? account.value : phone.value)) accountHistory.value.unshift(mode.value === "account" ? account.value : phone.value);
-  saveMockSession(mode.value === "account" ? account.value : phone.value);
-  showNotice("登录成功，正在进入盒子…", "success");
-  window.setTimeout(() => { window.location.hash = ""; }, 900);
 }
 onBeforeUnmount(() => { if (countdownTimer) window.clearInterval(countdownTimer); });
 </script>
@@ -81,18 +94,18 @@ onBeforeUnmount(() => { if (countdownTimer) window.clearInterval(countdownTimer)
   <div class="login-page">
     <section class="login-art" aria-label="游戏宣传区域">
       <div class="art-sky"></div><div class="art-sun"></div><div class="art-mountain mountain-back"></div><div class="art-mountain mountain-front"></div><div class="hero-warrior warrior-left">◒</div><div class="hero-warrior warrior-right">♞</div><div class="hero-sword">⚔</div>
-      <div class="brand-hero"><span>996</span><strong>传奇盒子</strong></div><div class="game-logo"><small>996</small><b>传奇世界</b><i>热血 · 兄弟 · 荣耀</i></div><div class="art-spark spark-one">✦　·　✧</div><div class="art-spark spark-two">·　✦　·</div>
+      <div class="brand-hero"><span>game</span><strong>盒子</strong></div><div class="game-logo"><small>game</small><b>传奇世界</b><i>热血 · 兄弟 · 荣耀</i></div><div class="art-spark spark-one">✦　·　✧</div><div class="art-spark spark-two">·　✦　·</div>
     </section>
     <section class="login-panel">
       <button class="close-button" aria-label="关闭" @click="closePage">×</button>
       <div class="panel-content">
-        <div class="brand-small"><span>996</span>传奇盒子</div>
+        <div class="brand-small"><span>game</span>盒子</div>
         <div class="login-tabs"><button :class="{ active: mode === 'account' }" @click="switchMode('account')">账号登录</button><i></i><button :class="{ active: mode === 'sms' }" @click="switchMode('sms')">短信登录</button></div>
         <form @submit.prevent="submitLogin" novalidate>
           <template v-if="mode === 'account'">
-            <label class="input-wrap account-input" :class="{ invalid: accountError }"><span class="input-icon">♙</span><input v-model.trim="account" autocomplete="username" placeholder="996 游戏账号 / 盒子号" @focus="showHistory = true" @blur="touched = true" /><button type="button" class="dropdown-button" @mousedown.prevent="showHistory = !showHistory">⌄</button><span v-if="accountError" class="field-error">{{ accountError }}</span><div v-if="showHistory && accountHistory.length" class="history-popover"><button v-for="item in accountHistory" :key="item" type="button" @mousedown.prevent="selectAccount(item)">{{ item }} <span>›</span></button></div></label>
+            <label class="input-wrap account-input" :class="{ invalid: accountError }"><span class="input-icon">♙</span><input v-model.trim="account" autocomplete="username" placeholder="game 游戏账号 / 盒子号" @focus="showHistory = true" @blur="touched = true" /><button type="button" class="dropdown-button" @mousedown.prevent="showHistory = !showHistory">⌄</button><span v-if="accountError" class="field-error">{{ accountError }}</span><div v-if="showHistory && accountHistory.length" class="history-popover"><button v-for="item in accountHistory" :key="item" type="button" @mousedown.prevent="selectAccount(item)">{{ item }} <span>›</span></button></div></label>
             <label class="input-wrap password-input" :class="{ invalid: passwordError }"><span class="input-icon">♙</span><input v-model="password" :type="showPassword ? 'text' : 'password'" autocomplete="current-password" placeholder="请输入密码" @blur="touched = true" /><button type="button" class="eye-button" @click="showPassword = !showPassword">{{ showPassword ? "◉" : "⌁" }}</button><span v-if="passwordError" class="field-error">{{ passwordError }}</span></label>
-            <div class="login-options"><button type="button" class="remember" :class="{ checked: rememberAccount }" @click="rememberAccount = !rememberAccount"><i>✓</i>记住账号</button><span><button type="button" @click="customerService">客服咨询</button><b>|</b><button type="button" @click="goRegister">注册</button><b>|</b><button type="button" @click="forgotPassword">忘记密码</button></span></div>
+            <div class="login-options"><button type="button" class="remember" :class="{ checked: rememberAccount }" @click="rememberAccount = !rememberAccount"><i>✓</i>记住账号</button><span><button type="button" class="customer-service-button" @click="customerService">客服咨询</button><b>|</b><button type="button" @click="goRegister">注册</button><b>|</b><button type="button" @click="forgotPassword">忘记密码</button></span></div>
           </template>
           <template v-else>
             <label class="input-wrap" :class="{ invalid: phoneError }"><span class="input-icon">♙</span><input v-model.trim="phone" inputmode="numeric" autocomplete="tel" placeholder="请输入手机号" @blur="touched = true" /><span v-if="phoneError" class="field-error">{{ phoneError }}</span></label>
@@ -152,4 +165,6 @@ onBeforeUnmount(() => { if (countdownTimer) window.clearInterval(countdownTimer)
   box-shadow: 0 0 0 1000px #242832 inset;
   background-color: #242832 !important;
 }
+.customer-service-button,
+.customer-service-button + b { display: none !important; }
 </style>

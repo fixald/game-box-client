@@ -1,5 +1,7 @@
 # Tauri + Vue + TypeScript
 
+> API 开发约束请先阅读 [API_RULES.md](./API_RULES.md)；跨工程规则见 [../API_ROUTE_RULES.md](../API_ROUTE_RULES.md)。
+
 This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
 
 ## Recommended IDE Setup

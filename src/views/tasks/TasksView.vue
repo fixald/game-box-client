@@ -78,11 +78,15 @@ function goAction(task: UserTask) {
   if (task.actionRoute) window.location.hash = task.actionRoute.replace("#", "");
   else notify("功能即将开放");
 }
+
+function goHome() {
+  window.location.hash = "";
+}
 </script>
 
 <template>
   <div class="tasks-page">
-    <header class="tasks-header"><div><span class="eyebrow">DAILY REWARDS</span><h1>任务中心</h1><p>完成任务，领取积分、礼包和 SVIP 专属奖励</p></div><button class="back-button" @click="window.location.hash = ''">← 返回</button></header>
+    <header class="tasks-header"><div><span class="eyebrow">DAILY REWARDS</span><h1>任务中心</h1><p>完成任务，领取积分、礼包和 SVIP 专属奖励</p></div><button class="back-button" @click="goHome">← 返回</button></header>
 
     <section class="summary-grid">
       <article class="summary-card points-card"><div class="summary-icon">✦</div><div><span>我的积分</span><strong>{{ data.summary.points.toLocaleString() }}</strong><small>可兑换礼包和抽奖次数</small></div><button @click="notify('积分商城即将开放')">去兑换 →</button></article>

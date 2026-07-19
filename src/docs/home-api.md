@@ -14,7 +14,7 @@
 ## 1. 获取首页聚合数据
 
 ```http
-GET /api/home/feed?channel=recommend&page=1&pageSize=20
+GET /api/v1/client/home/feed?channel=recommend&page=1&pageSize=20
 Authorization: Bearer <accessToken>
 X-Request-Id: <clientRequestId>
 ```
@@ -131,7 +131,7 @@ X-Request-Id: <clientRequestId>
 ### 搜索
 
 ```http
-GET /api/search?q=冰雪&type=all&page=1&pageSize=10
+GET /api/v1/client/search?q=冰雪&type=all&page=1&pageSize=10
 ```
 
 `type`：`all`、`game`、`live`、`server`、`gift`、`article`。
@@ -139,7 +139,7 @@ GET /api/search?q=冰雪&type=all&page=1&pageSize=10
 ### 记录首页行为
 
 ```http
-POST /api/ads/events
+POST /api/v1/client/ads/events
 Authorization: Bearer <accessToken>
 Idempotency-Key: <stableEventKey>
 Content-Type: application/json
@@ -163,8 +163,8 @@ Content-Type: application/json
 首页只读取摘要，详情使用：
 
 ```http
-GET /api/tasks/unread-count
-GET /api/messages/unread-count
+GET /api/v1/client/tasks/unread-count
+GET /api/v1/client/messages/unread-count
 ```
 
 返回：
