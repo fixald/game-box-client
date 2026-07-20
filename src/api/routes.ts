@@ -18,4 +18,9 @@ export const clientApi = {
   servers: `${CLIENT_API_PREFIX}/game-servers`,
   tasks: `${CLIENT_API_PREFIX}/tasks`,
   messages: `${CLIENT_API_PREFIX}/messages`,
+  search: `${CLIENT_API_PREFIX}/search`,
+  searchSuggestions: `${CLIENT_API_PREFIX}/search/suggestions`,
+  searchHot: `${CLIENT_API_PREFIX}/search/hot`,
+  searchHistory: `${CLIENT_API_PREFIX}/search/history`,
+  searchEvents: `${CLIENT_API_PREFIX}/search/events`,
 } as const

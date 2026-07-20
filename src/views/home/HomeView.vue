@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { HomeChannel, HomeFeed, NewServer } from "../../types/home";
 import { getCurrentAccountInfo } from "../../api/account";
 import { clearSession, getCurrentAccount } from "../../utils/auth";
+import { getSearchHistory, popularSearches, sanitizeSearchQuery } from "../../utils/search";
+import { getSuggestions } from "../../api/search";
 
 const channels: Array<{ key: HomeChannel; label: string }> = [
   { key: "follow", label: "关注" },
@@ -52,6 +54,14 @@ const feed = ref<HomeFeed>({
 const activeChannel = ref<HomeChannel>("recommend");
 const activeNav = ref("首页");
 const searchText = ref("");
+const searchInput = ref<HTMLInputElement | null>(null);
+const searchFocused = ref(false);
+const searchHistory = ref(getSearchHistory());
+const searchSuggestions = ref<string[]>([]);
+const suggestionsLoading = ref(false);
+let suggestionTimer = 0;
+let suggestionRequest = 0;
+const suggestionController = ref<AbortController | null>(null);
 const bannerIndex = ref(0);
 const toast = ref("");
 const currentAccount = ref(getCurrentAccount());
@@ -71,6 +81,51 @@ function notify(message: string) {
   window.setTimeout(() => { toast.value = ""; }, 2200);
 }
 
+function submitSearch(value = searchText.value) {
+  const keyword = sanitizeSearchQuery(value);
+  if (!keyword) return notify("请输入有效的搜索内容");
+  searchText.value = keyword;
+  searchFocused.value = false;
+  window.location.hash = `#/search?q=${encodeURIComponent(keyword)}`;
+}
+function submitSearchForm() { submitSearch(); }
+
+function handleSearchShortcut(event: KeyboardEvent) {
+  const target = event.target as HTMLElement | null;
+  const isEditable = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
+  const hasPlatformModifier = navigator.platform.toLowerCase().includes("mac") ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+  if (event.defaultPrevented || event.repeat || isEditable || !hasPlatformModifier || event.key.toLowerCase() !== "k") return;
+  event.preventDefault();
+  searchFocused.value = true;
+  searchInput.value?.focus();
+  searchInput.value?.select();
+}
+
+function refreshSuggestions(value: string) {
+  window.clearTimeout(suggestionTimer);
+  suggestionController.value?.abort();
+  const keyword = sanitizeSearchQuery(value);
+  if (keyword.length === 0) {
+    searchSuggestions.value = [...searchHistory.value, ...popularSearches].filter((item, index, list) => list.indexOf(item) === index).slice(0, 6);
+    suggestionsLoading.value = false;
+    return;
+  }
+  if (keyword.length < 2) { searchSuggestions.value = []; suggestionsLoading.value = false; return; }
+  const requestId = ++suggestionRequest;
+  suggestionsLoading.value = true;
+  suggestionTimer = window.setTimeout(async () => {
+    const controller = new AbortController();
+    suggestionController.value = controller;
+    try {
+      const response = await getSuggestions(keyword, 6, controller.signal);
+      if (requestId === suggestionRequest) searchSuggestions.value = response.suggestions.map((item) => item.text).slice(0, 6);
+    } catch (error) { if ((error as DOMException).name !== "AbortError") searchSuggestions.value = []; }
+    finally { if (requestId === suggestionRequest) suggestionsLoading.value = false; }
+  }, 300);
+}
+
+watch(searchText, refreshSuggestions, { immediate: true });
+
 function formatCountdown(server: NewServer) {
   const diff = Math.max(0, new Date(server.openAt).getTime() - now.value);
   if (diff === 0) return "已开启";
@@ -88,7 +143,7 @@ function switchBanner(step: number) {
 function enterSection(label: string) {
   activeNav.value = label;
   if (label === "任务") {
-    window.location.hash = "/tasks";
+    window.location.hash = "#/tasks";
     return;
   }
   if (label !== "首页") notify(`「${label}」页面即将开放`);
@@ -113,7 +168,9 @@ async function goAccount() {
   }
 }
 
-onBeforeUnmount(() => window.clearInterval(timer));
+onBeforeUnmount(() => { window.clearInterval(timer); window.clearTimeout(suggestionTimer); suggestionController.value?.abort(); });
+onMounted(() => window.addEventListener("keydown", handleSearchShortcut));
+onBeforeUnmount(() => window.removeEventListener("keydown", handleSearchShortcut));
 </script>
 
 <template>
@@ -131,7 +188,7 @@ onBeforeUnmount(() => window.clearInterval(timer));
     <section class="gamebox-main">
       <header class="topbar">
         <div class="window-actions"><button aria-label="刷新" @click="notify('内容已刷新')">↻</button></div>
-        <label class="search-box"><span>⌕</span><input v-model="searchText" placeholder="搜索游戏 / 主播 / 区服 / 礼包" /><kbd>⌘ K</kbd></label>
+        <div class="search-wrap"><form class="search-box" @submit.prevent="submitSearchForm"><button type="submit" aria-label="搜索">⌕</button><input ref="searchInput" v-model="searchText" placeholder="搜索游戏 / 主播 / 区服 / 礼包" @focus="searchFocused = true" @keydown.esc="searchFocused = false" /><span v-if="suggestionsLoading" class="search-loading">搜索中…</span><kbd v-else>⌘ K</kbd></form><div v-if="searchFocused" class="search-popover" @mousedown.prevent><span class="search-popover-title">{{ searchText.trim() ? "搜索建议" : "热门搜索 / 历史记录" }}</span><button v-for="item in searchSuggestions" :key="item" @click="submitSearch(item)">⌕ {{ item }}</button><span v-if="!searchSuggestions.length && !suggestionsLoading" class="search-popover-empty">{{ searchText.trim().length < 2 ? "请输入至少 2 个字符" : "暂无匹配建议" }}</span><span v-if="suggestionsLoading" class="search-popover-empty">正在获取建议…</span><button class="search-more" @click="submitSearchForm">查看全部结果 →</button></div></div>
         <div class="user-actions"><button class="message-button" @click="notify(`有 ${feed.messageUnreadCount} 条未读消息`)">♢<i v-if="feed.messageUnreadCount"></i></button><button class="account-button" :class="{ loading: accountLoading }" aria-label="个人中心" :disabled="accountLoading" @click="goAccount"><span class="avatar">{{ currentAccount.slice(0, 1).toUpperCase() }}</span></button><button class="logout-button" @click="logout">退出</button></div>
       </header>
 
@@ -187,4 +244,7 @@ button { border: 0; color: inherit; cursor: pointer; }
 .logout-button { padding: 6px 9px; color: #8f919b; background: transparent; border: 1px solid #383a44; border-radius: 4px; font-size: 10px; }
 .logout-button:hover { color: #e06f72; border-color: #754044; }
 @media (max-width: 680px) { .account-name, .logout-button { display: none; } }
+.search-wrap { position: relative; width: min(360px, 35vw); }.search-popover { position: absolute; z-index: 10; top: 42px; left: 0; right: 0; padding: 9px; border: 1px solid #36333a; border-radius: 8px; background: #1a1b22; box-shadow: 0 12px 30px rgba(0,0,0,.35); }.search-popover-title,.search-popover-empty { display: block; padding: 6px 8px; color: #a9955a; font-size: 10px; }.search-popover button { display: block; width: 100%; padding: 8px; text-align: left; border-radius: 4px; background: transparent; color: #c4c5cb; font-size: 12px; }.search-popover button:hover { color: #f0ce62; background: #29271f; }.search-more { margin-top: 4px; border-top: 1px solid #2c2d35; color: #d2b24e !important; }.search-popover-empty { color: #777984; }
+.search-box > button { width: 22px; height: 26px; flex: 0 0 22px; padding: 0; border: 0; outline: 0; border-radius: 0; background: transparent !important; color: #858791; line-height: 1; appearance: none; -webkit-appearance: none; }
+.search-box > button:hover, .search-box > button:focus, .search-box > button:active { background: transparent !important; color: #f0c955; box-shadow: none; }
 </style>

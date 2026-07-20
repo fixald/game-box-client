@@ -6,6 +6,7 @@ import RegisterView from "./views/auth/RegisterView.vue";
 import LoginView from "./views/auth/LoginView.vue";
 import ForgotPasswordView from "./views/auth/ForgotPasswordView.vue";
 import AccountView from "./views/account/AccountView.vue";
+import SearchView from "./views/search/SearchView.vue";
 import { isAuthenticated } from "./utils/auth";
 
 const hash = ref(window.location.hash || (isAuthenticated() ? "" : "#/login"));
@@ -15,6 +16,7 @@ const currentView = computed(() => {
   if (hash.value === "#/register") return RegisterView;
   if (hash.value === "#/login") return LoginView;
   if (hash.value === "#/forgot-password") return ForgotPasswordView;
+  if (hash.value.startsWith("#/search")) return SearchView;
   if (!authenticated.value) return LoginView;
   return hash.value === "#/tasks" ? TasksView : HomeView;
 });
