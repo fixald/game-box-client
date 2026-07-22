@@ -3,7 +3,11 @@ import { clientApi } from "./routes";
 import { getAccessToken } from "../utils/auth";
 
 export interface AccountResponse {
-  user?: { account?: string; nickname?: string };
+  user?: {
+    account?: string;
+    nickname?: string;
+    vip?: { level?: number; growthValue?: number; growthTarget?: number; expiresAt?: string | null };
+  };
   stats?: Record<string, number>;
 }
 

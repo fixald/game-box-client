@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import type { HomeChannel, HomeFeed, NewServer } from "../../types/home";
+import type { HomeChannel, HomeFeed, NewServer, RecommendedGame } from "../../types/home";
 import { getCurrentAccountInfo } from "../../api/account";
 import { clearSession, getCurrentAccount } from "../../utils/auth";
 import { getSearchHistory, popularSearches, sanitizeSearchQuery } from "../../utils/search";
 import { getSuggestions } from "../../api/search";
+import { getRecommendedServers, normalizeServerList } from "../../api/servers";
+import { getPopularGames, normalizeGameList } from "../../api/games";
 
 const channels: Array<{ key: HomeChannel; label: string }> = [
   { key: "follow", label: "关注" },
@@ -18,12 +20,10 @@ const navItems = [
   { icon: "▶", label: "直播" },
   { icon: "◈", label: "社区" },
   { icon: "♡", label: "美女" },
-  { icon: "◌", label: "资讯" },
   { icon: "◉", label: "游戏" },
   { icon: "✓", label: "任务", badge: true },
   { icon: "♛", label: "公会" },
   { icon: "S", label: "SVIP" },
-  { icon: "✦", label: "抽奖" },
   { icon: "↗", label: "邀请" },
 ];
 
@@ -52,6 +52,10 @@ const feed = ref<HomeFeed>({
 });
 
 const activeChannel = ref<HomeChannel>("recommend");
+const serversLoading = ref(false);
+const serversError = ref("");
+const gamesLoading = ref(false);
+const gamesError = ref("");
 const activeNav = ref("首页");
 const searchText = ref("");
 const searchInput = ref<HTMLInputElement | null>(null);
@@ -135,6 +139,64 @@ function formatCountdown(server: NewServer) {
   return `${hours}时 ${minutes.toString().padStart(2, "0")}分 ${seconds.toString().padStart(2, "0")}秒`;
 }
 
+function serverStatusLabel(status: NewServer["status"]) {
+  const labels: Record<NewServer["status"], string> = {
+    opening_soon: "预约中",
+    normal: "已开启",
+    hot: "火爆",
+    full: "已满",
+    maintenance: "维护中",
+  };
+  return labels[status];
+}
+
+async function loadRecommendedServers(pageSizeOrEvent: number | Event = 6) {
+  const pageSize = typeof pageSizeOrEvent === "number" ? pageSizeOrEvent : 6;
+  serversLoading.value = true;
+  serversError.value = "";
+  try {
+    const response = await getRecommendedServers(1, pageSize);
+    feed.value.newServers = normalizeServerList(response).map((server) => ({
+      id: String(server.id), gameId: String(server.gameId), gameName: server.gameName ?? "游戏区服", imageUrl: server.imageUrl ?? server.iconUrl,
+      serverName: server.name, openAt: server.openTime,
+      status: server.status === "preview" ? "opening_soon" : server.status === "closed" ? "maintenance" : server.status,
+      onlineLabel: serverStatusLabel(server.status === "preview" ? "opening_soon" : server.status === "closed" ? "maintenance" : server.status),
+      tags: server.tags ?? (server.isRecommended ? ["推荐区服"] : []),
+    }));
+  } catch (error) {
+    serversError.value = error instanceof Error ? error.message : "新服数据加载失败";
+  } finally { serversLoading.value = false; }
+}
+
+function enterServer(server: NewServer) {
+  window.location.hash = `#/games/${encodeURIComponent(server.gameId)}/servers?serverId=${encodeURIComponent(server.id)}`;
+}
+
+function openNewServerChannel() {
+  activeChannel.value = "new-server";
+  void loadRecommendedServers(20);
+}
+
+async function loadPopularGames() {
+  gamesLoading.value = true;
+  gamesError.value = "";
+  try {
+    const response = await getPopularGames(1, 6);
+    feed.value.games = normalizeGameList(response).map((game, index) => ({
+      id: String(game.id), name: game.name, subtitle: game.description ?? "热门游戏，等你来战",
+      genre: game.category ?? game.gameType ?? "热门游戏", playersLabel: "热门推荐",
+      accent: ["#2a4b8d", "#713c24", "#364b32", "#56357d"][index % 4], iconUrl: game.iconUrl,
+      isNew: index === 0,
+    }));
+  } catch (error) {
+    gamesError.value = error instanceof Error ? error.message : "热门游戏加载失败";
+  } finally { gamesLoading.value = false; }
+}
+
+function enterGame(game: RecommendedGame) {
+  window.location.hash = `#/games/${encodeURIComponent(game.id)}`;
+}
+
 function switchBanner(step: number) {
   const count = feed.value.banners.length;
   bannerIndex.value = (bannerIndex.value + step + count) % count;
@@ -144,6 +206,14 @@ function enterSection(label: string) {
   activeNav.value = label;
   if (label === "任务") {
     window.location.hash = "#/tasks";
+    return;
+  }
+  if (label === "游戏") {
+    window.location.hash = "#/games";
+    return;
+  }
+  if (label === "SVIP") {
+    window.location.hash = "#/vip";
     return;
   }
   if (label !== "首页") notify(`「${label}」页面即将开放`);
@@ -170,6 +240,14 @@ async function goAccount() {
 
 onBeforeUnmount(() => { window.clearInterval(timer); window.clearTimeout(suggestionTimer); suggestionController.value?.abort(); });
 onMounted(() => window.addEventListener("keydown", handleSearchShortcut));
+onMounted(loadRecommendedServers);
+onMounted(loadPopularGames);
+watch(activeChannel, (channel) => {
+  if (channel === "new-server") void loadRecommendedServers(20);
+});
+watch(activeNav, (label) => {
+  if (label === "游戏" && window.location.hash !== "#/games") window.location.hash = "#/games";
+});
 onBeforeUnmount(() => window.removeEventListener("keydown", handleSearchShortcut));
 </script>
 
@@ -192,8 +270,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleSearchShortcut
         <div class="user-actions"><button class="message-button" @click="notify(`有 ${feed.messageUnreadCount} 条未读消息`)">♢<i v-if="feed.messageUnreadCount"></i></button><button class="account-button" :class="{ loading: accountLoading }" aria-label="个人中心" :disabled="accountLoading" @click="goAccount"><span class="avatar">{{ currentAccount.slice(0, 1).toUpperCase() }}</span></button><button class="logout-button" @click="logout">退出</button></div>
       </header>
 
-      <main class="home-content">
-        <div class="channel-tabs"><button v-for="channel in channels" :key="channel.key" :class="{ selected: activeChannel === channel.key }" @click="activeChannel = channel.key">{{ channel.label }}</button></div>
+      <main class="home-content" :class="{ 'new-server-mode': activeChannel === 'new-server' }">
+        <div class="channel-tabs"><button v-for="channel in channels" :key="channel.key" :class="{ selected: activeChannel === channel.key }" @click="channel.key === 'new-server' ? openNewServerChannel() : activeChannel = channel.key">{{ channel.label }}</button></div>
 
         <section class="hero-grid">
           <article class="hero-live" :style="{ '--live-accent': feed.liveRooms[0].accent }">
@@ -203,9 +281,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleSearchShortcut
           <aside class="hero-promo" :style="{ '--promo-accent': currentBanner?.accent }"><span class="promo-eyebrow">{{ currentBanner?.eyebrow }}</span><h2>{{ currentBanner?.title }}</h2><p>{{ currentBanner?.description }}</p><button class="promo-button" @click="notify(currentBanner?.actionLabel ?? '活动详情')">{{ currentBanner?.actionLabel }} <span>→</span></button><div class="promo-dots"><button v-for="(_, index) in feed.banners" :key="index" :class="{ active: bannerIndex === index }" @click="bannerIndex = index"></button></div><button class="carousel-arrow prev" @click="switchBanner(-1)">‹</button><button class="carousel-arrow next" @click="switchBanner(1)">›</button></aside>
         </section>
 
-        <section class="section-block"><div class="section-heading"><div><span class="section-kicker">HOT SERVERS</span><h2>新服推荐</h2></div><button class="link-button" @click="activeChannel = 'new-server'">查看全部 <span>→</span></button></div><div class="server-list"><article v-for="server in feed.newServers" :key="server.id" class="server-card"><div class="server-icon">{{ server.gameName.slice(0, 1) }}</div><div class="server-info"><div class="server-title"><strong>{{ server.serverName }}</strong><span class="status-pill" :class="server.status">{{ server.onlineLabel }}</span></div><p>{{ server.gameName }} · {{ formatCountdown(server) }}</p><div class="tag-list"><span v-for="tag in server.tags" :key="tag">{{ tag }}</span></div></div><button class="small-button" @click="notify(`已选择 ${server.serverName}`)">进入</button></article></div></section>
+        <section class="section-block"><div class="section-heading"><div><span class="section-kicker">HOT SERVERS</span><h2>新服推荐</h2></div><button class="link-button" @click="activeChannel = 'new-server'">查看全部 <span>→</span></button></div><div v-if="serversLoading" class="server-state">正在加载新服…</div><div v-else-if="serversError" class="server-state"><span>{{ serversError }}</span><button class="small-button" @click="loadRecommendedServers">重试</button></div><div v-else-if="!feed.newServers.length" class="server-state">暂无推荐区服</div><div v-else class="server-list"><article v-for="server in feed.newServers" :key="server.id" class="server-card"><div class="server-icon"><img v-if="server.imageUrl" :src="server.imageUrl" :alt="server.gameName" /><span v-else>{{ server.gameName.slice(0, 1) }}</span></div><div class="server-info"><div class="server-title"><strong>{{ server.serverName }}</strong><span class="status-pill" :class="server.status">{{ server.onlineLabel }}</span></div><p>{{ server.gameName }} · {{ formatCountdown(server) }}</p><div class="tag-list"><span v-for="tag in server.tags" :key="tag">{{ tag }}</span></div></div><button class="small-button" @click="enterServer(server)">进入</button></article></div></section>
 
-        <section class="section-block"><div class="section-heading"><div><span class="section-kicker">EXPLORE GAMES</span><h2>热门游戏</h2></div><button class="link-button" @click="activeNav = '游戏'">全部游戏 <span>→</span></button></div><div v-if="filteredGames.length" class="game-list"><article v-for="game in filteredGames" :key="game.id" class="game-card" :style="{ '--game-accent': game.accent }"><div class="game-cover"><span v-if="game.isNew" class="new-label">NEW</span><span class="game-emblem">{{ game.name.slice(0, 1) }}</span><small>{{ game.genre }}</small></div><div class="game-info"><h3>{{ game.name }} <span>⋮</span></h3><p>{{ game.subtitle }}</p><div class="game-meta"><span>◉ {{ game.playersLabel }}</span><button @click="notify(`正在准备 ${game.name}`)">开始游戏</button></div></div></article></div><div v-else class="empty-state">没有找到匹配的游戏</div></section>
+        <section class="section-block"><div class="section-heading"><div><span class="section-kicker">EXPLORE GAMES</span><h2>热门游戏</h2></div><button class="link-button" @click="activeNav = '游戏'">全部游戏 <span>→</span></button></div><div v-if="gamesLoading" class="server-state">正在加载热门游戏…</div><div v-else-if="gamesError" class="server-state"><span>{{ gamesError }}</span><button class="small-button" @click="loadPopularGames">重试</button></div><div v-else-if="filteredGames.length" class="game-list"><article v-for="game in filteredGames" :key="game.id" class="game-card" :style="{ '--game-accent': game.accent }"><div class="game-cover"><img v-if="game.iconUrl" :src="game.iconUrl" :alt="game.name" /><span v-else-if="game.isNew" class="new-label">NEW</span><span v-if="!game.iconUrl" class="game-emblem">{{ game.name.slice(0, 1) }}</span><small>{{ game.genre }}</small></div><div class="game-info"><h3>{{ game.name }} <span>⋮</span></h3><p>{{ game.subtitle }}</p><div class="game-meta"><span>热门推荐</span><button @click="enterGame(game)">查看详情</button></div></div></article></div><div v-else class="empty-state">没有找到匹配的游戏</div></section>
       </main>
     </section>
     <Transition name="toast"><div v-if="toast" class="toast-message">{{ toast }}</div></Transition>
@@ -213,12 +291,19 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleSearchShortcut
 </template>
 
 <style scoped>
+.server-icon { flex: 0 0 110px !important; width: 110px !important; height: 112px !important; overflow: hidden; }
+.server-icon img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.server-icon > span { color: #f7dd83; font-size: 38px; font-weight: 900; text-shadow: 2px 2px 0 #51290d; }
+.new-server-mode .hero-grid, .new-server-mode .section-block:nth-of-type(3) { display: none; }
+.new-server-mode .section-block:nth-of-type(2) .section-heading h2 { font-size: 0; }
+.new-server-mode .section-block:nth-of-type(2) .section-heading h2::after { content: "新服列表"; font-size: 20px; }
 :global(*) { box-sizing: border-box; }
 :global(body) { margin: 0; background: #101116; color: #f4f1eb; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
 :global(button), :global(input) { font: inherit; }
 button { border: 0; color: inherit; cursor: pointer; }
 .gamebox-shell { min-height: 100vh; display: flex; background: radial-gradient(circle at 70% 0%, #20202a 0, #111217 42%, #0c0d11 100%); }
 .gamebox-sidebar { width: 104px; flex: 0 0 104px; background: rgba(13, 14, 19, .96); border-right: 1px solid #23242c; display: flex; flex-direction: column; align-items: center; padding: 20px 10px 15px; }
+.gamebox-sidebar { position: sticky; top: 0; align-self: flex-start; height: 100vh; max-height: 100vh; overflow-y: auto; box-sizing: border-box; }
 .brand { color: #f4c94e; font-weight: 800; font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 3px; letter-spacing: 1px; white-space: nowrap; }.brand-mark { font-size: 18px; line-height: 17px; font-style: italic; }.side-nav { width: 100%; margin-top: 28px; display: flex; flex-direction: column; gap: 6px; }.side-item { position: relative; width: 100%; min-height: 53px; border-radius: 10px; background: transparent; color: #777984; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; transition: .2s; }.side-item:hover, .side-item.active { color: #f4c94e; background: linear-gradient(145deg, rgba(244, 201, 78, .2), rgba(244, 201, 78, .04)); }.side-icon { height: 19px; font-size: 18px; line-height: 19px; }.nav-badge { position: absolute; top: 5px; right: 12px; min-width: 15px; padding: 1px 4px; border-radius: 8px; background: #ec4e55; color: white; font-size: 9px; font-style: normal; }.sidebar-footer { margin-top: auto; width: 100%; }
 .gamebox-main { min-width: 0; flex: 1; }.topbar { height: 64px; padding: 0 32px; border-bottom: 1px solid #23242c; display: flex; align-items: center; gap: 28px; background: rgba(13, 14, 19, .62); }.window-actions { display: flex; gap: 14px; }.window-actions button { background: transparent; color: #858791; font-size: 24px; line-height: 1; }.window-actions button:hover { color: #f4c94e; }.search-box { width: min(360px, 35vw); height: 34px; padding: 0 10px; display: flex; align-items: center; gap: 8px; border: 1px solid #2d2e37; border-radius: 8px; background: #191a20; color: #73757f; }.search-box input { width: 100%; border: 0; outline: 0; color: #eee; background: transparent; font-size: 12px; }.search-box kbd { color: #5d606c; font-size: 10px; white-space: nowrap; }.user-actions { margin-left: auto; display: flex; align-items: center; gap: 18px; }.message-button { position: relative; background: transparent; color: #8d8e98; font-size: 22px; }.message-button i { position: absolute; top: 0; right: -2px; width: 6px; height: 6px; border-radius: 50%; background: #e65b60; }.login-button { padding: 8px 13px; color: #d3b65a; background: #29251a; border: 1px solid #5e512d; border-radius: 6px; font-size: 12px; }.avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: #30323b; color: #aaa; font-size: 12px; }
 .home-content { max-width: 1450px; margin: auto; padding: 0 40px 48px; }.channel-tabs { height: 64px; display: flex; align-items: center; gap: 38px; }.channel-tabs button { position: relative; height: 100%; padding: 0; background: transparent; color: #868791; font-size: 14px; }.channel-tabs button:hover, .channel-tabs button.selected { color: #f5d254; }.channel-tabs button.selected::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 30px; height: 2px; transform: translateX(-50%); background: #eac34a; box-shadow: 0 0 10px #eac34a; }

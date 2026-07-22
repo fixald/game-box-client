@@ -7,6 +7,11 @@ import LoginView from "./views/auth/LoginView.vue";
 import ForgotPasswordView from "./views/auth/ForgotPasswordView.vue";
 import AccountView from "./views/account/AccountView.vue";
 import SearchView from "./views/search/SearchView.vue";
+import ServerSelectView from "./views/games/ServerSelectView.vue";
+import GameDetailView from "./views/games/GameDetailView.vue";
+import GamesView from "./views/games/GamesView.vue";
+import VipView from "./views/vip/VipView.vue";
+import CommunityView from "./views/community/CommunityView.vue";
 import { isAuthenticated } from "./utils/auth";
 
 const hash = ref(window.location.hash || (isAuthenticated() ? "" : "#/login"));
@@ -17,6 +22,11 @@ const currentView = computed(() => {
   if (hash.value === "#/login") return LoginView;
   if (hash.value === "#/forgot-password") return ForgotPasswordView;
   if (hash.value.startsWith("#/search")) return SearchView;
+  if (hash.value.startsWith("#/games/") && hash.value.includes("/servers")) return ServerSelectView;
+  if (hash.value.startsWith("#/games/")) return GameDetailView;
+  if (hash.value === "#/games") return GamesView;
+  if (hash.value === "#/vip") return VipView;
+  if (hash.value === "#/community") return CommunityView;
   if (!authenticated.value) return LoginView;
   return hash.value === "#/tasks" ? TasksView : HomeView;
 });

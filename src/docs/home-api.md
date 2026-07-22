@@ -1,5 +1,8 @@
 # 首页后端接口契约
 
+新服推荐独立接口：`GET /api/v1/client/game-servers?page=1&pageSize=6&recommended=true`，游客可访问。
+推荐结果按 `recommendationWeight` 降序，其次按状态优先级、在线人数、开服时间排序。
+
 首页建议由一个聚合接口返回首屏所需数据，避免客户端并发请求多个模块导致首屏闪烁。所有响应使用统一结构：
 
 ```json

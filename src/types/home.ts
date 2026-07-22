@@ -17,6 +17,7 @@ export interface NewServer {
   id: string;
   gameId: string;
   gameName: string;
+  imageUrl?: string;
   serverName: string;
   openAt: string;
   status: "opening_soon" | "normal" | "hot" | "full" | "maintenance";
@@ -31,6 +32,7 @@ export interface RecommendedGame {
   genre: string;
   playersLabel: string;
   accent: string;
+  iconUrl?: string;
   isNew?: boolean;
 }
 

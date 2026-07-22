@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import type { TaskCategory, TasksResponse, UserTask } from "../../types/tasks";
+import { claimCheckinReward, claimTask as claimTaskApi, getCheckinRewards, getTaskList, getTasks, type CheckinReward, submitCheckin } from "../../api/tasks";
 
 const categories: Array<{ key: "all" | TaskCategory; label: string }> = [
   { key: "all", label: "全部任务" },
@@ -38,14 +39,40 @@ const data = ref<TasksResponse>({
     { id: "task-4", category: "newbie", title: "完善个人资料", description: "上传头像并设置昵称", icon: "◇", progress: 0, target: 1, status: "in_progress", rewards: [{ type: "vip_exp", name: "SVIP经验", amount: 100, icon: "♛" }], actionLabel: "去完善", actionRoute: "#/settings" },
     { id: "task-5", category: "social", title: "关注 3 位主播", description: "关注你喜欢的传奇主播", icon: "♡", progress: 2, target: 3, status: "in_progress", rewards: [{ type: "points", name: "积分", amount: 30, icon: "✦" }], actionLabel: "去关注", actionRoute: "#/live" },
     { id: "task-6", category: "newbie", title: "完成首次下载", description: "下载并校验一款游戏", icon: "↓", progress: 1, target: 1, status: "claimed", rewards: [{ type: "coupon", name: "下载加速券", amount: 1, icon: "⚡" }] },
+    { id: "task-7", category: "daily", title: "浏览新服推荐", description: "查看今日推荐新区和开服信息", icon: "◈", progress: 0, target: 1, status: "in_progress", rewards: [{ type: "points", name: "积分", amount: 10, icon: "✦" }], actionLabel: "去新服", actionRoute: "#/" },
+    { id: "task-8", category: "daily", title: "完成一次签到", description: "在任务中心完成每日签到", icon: "✓", progress: 0, target: 1, status: "in_progress", rewards: [{ type: "points", name: "积分", amount: 20, icon: "✦" }] },
+    { id: "task-9", category: "game", title: "查看游戏详情", description: "浏览任意一款游戏的详情页面", icon: "◉", progress: 0, target: 1, status: "in_progress", rewards: [{ type: "points", name: "积分", amount: 15, icon: "✦" }], actionLabel: "去游戏", actionRoute: "#/games" },
+    { id: "task-10", category: "game", title: "进入推荐区服", description: "从新服推荐中选择一个区服", icon: "⚑", progress: 0, target: 1, status: "in_progress", rewards: [{ type: "gift", name: "区服礼包", icon: "🎁" }] },
+    { id: "task-11", category: "social", title: "查看一条资讯", description: "阅读平台最新游戏资讯", icon: "▤", progress: 0, target: 1, status: "in_progress", rewards: [{ type: "points", name: "积分", amount: 10, icon: "✦" }], actionLabel: "去资讯", actionRoute: "#/news" },
+    { id: "task-12", category: "newbie", title: "完成首次区服选择", description: "选择喜欢的游戏区服", icon: "◇", progress: 0, target: 1, status: "in_progress", rewards: [{ type: "vip_exp", name: "SVIP经验", amount: 50, icon: "♛" }] },
   ],
 });
 
 const activeCategory = ref<"all" | TaskCategory>("all");
 const loading = ref(false);
+const pageLoading = ref(false);
+const pageError = ref("");
+const checkinRewards = ref<CheckinReward[]>([]);
 const toast = ref("");
 const filteredTasks = computed(() => activeCategory.value === "all" ? data.value.tasks : data.value.tasks.filter((task) => task.category === activeCategory.value));
-const completionRate = computed(() => Math.round(data.value.tasks.filter((task) => task.status === "claimed").length / data.value.tasks.length * 100));
+const completionRate = computed(() => data.value.tasks.length
+  ? Math.round(data.value.tasks.filter((task) => task.status === "claimed").length / data.value.tasks.length * 100)
+  : 0);
+const checkedInDays = computed(() => data.value.summary.checkin.days.filter((day) => day.checked).length);
+const todayCheckinLabel = computed(() => data.value.summary.checkin.checkedToday ? "今日已完成签到" : "今日还未签到");
+const todayDate = new Date();
+const todayKey = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, "0")}-${String(todayDate.getDate()).padStart(2, "0")}`;
+const calendarDays = computed(() => {
+  const [year, month] = data.value.summary.checkin.month.split("-").map(Number);
+  const totalDays = new Date(year, month, 0).getDate();
+  const existing = new Map(data.value.summary.checkin.days.map((day) => [day.date, day]));
+  return Array.from({ length: totalDays }, (_, index) => {
+    const dayOfMonth = index + 1;
+    const date = `${year}-${String(month).padStart(2, "0")}-${String(dayOfMonth).padStart(2, "0")}`;
+    return existing.get(date) ?? { date, dayOfMonth, checked: false, available: date <= todayKey, reward: { type: "points", name: "积分", amount: 10, icon: "✦" } };
+  });
+});
+const checkinMilestones = computed(() => checkinRewards.value.map((item) => ({ ...item, days: item.level, completed: item.status === "claimed" })));
 
 function notify(message: string) {
   toast.value = message;
@@ -55,23 +82,66 @@ function notify(message: string) {
 function claimTask(task: UserTask) {
   if (task.status !== "claimable") return;
   loading.value = true;
-  window.setTimeout(() => {
+  void claimTaskApi(task.id).then((result) => {
     task.status = "claimed";
     data.value.summary.claimableCount = Math.max(0, data.value.summary.claimableCount - 1);
-    data.value.summary.points += task.rewards.find((reward) => reward.type === "points")?.amount ?? 0;
-    loading.value = false;
+    data.value.summary.points += result.points;
     notify(`已领取「${task.title}」奖励`);
-  }, 350);
+  }).catch((error) => notify(error instanceof Error ? error.message : "领取失败，请稍后重试")).finally(() => { loading.value = false; });
 }
 
 function checkin() {
   if (data.value.summary.checkin.checkedToday) return notify("今天已经签到过了");
-  data.value.summary.checkin.checkedToday = true;
-  const today = data.value.summary.checkin.days.find((day) => day.dayOfMonth === 7);
-  if (today) today.checked = true;
-  data.value.summary.continuousCheckinDays += 1;
-  data.value.summary.points += 20;
-  notify("签到成功，积分已到账");
+  loading.value = true;
+  void submitCheckin(todayKey).then((result) => {
+    data.value.summary.checkin.checkedToday = true;
+    data.value.summary.continuousCheckinDays += 1;
+    data.value.summary.points += result.points;
+    const today = data.value.summary.checkin.days.find((day) => day.date === todayKey);
+    if (today) today.checked = true;
+    notify("签到成功，积分已到账");
+  }).catch((error) => notify(error instanceof Error ? error.message : "签到失败，请稍后重试")).finally(() => { loading.value = false; });
+}
+
+function claimReward(level: number) {
+  const reward = checkinRewards.value.find((item) => item.level === level);
+  if (!reward || reward.status !== "claimable") return;
+  loading.value = true;
+  void claimCheckinReward(level).then(() => {
+    reward.status = "claimed";
+    notify(`已领取「${reward.name}」`);
+  }).catch((error) => notify(error instanceof Error ? error.message : "奖励领取失败，请稍后重试")).finally(() => { loading.value = false; });
+}
+
+async function loadTasks() {
+  pageLoading.value = true;
+  pageError.value = "";
+  try {
+    const month = todayKey.slice(0, 7);
+    const [taskInfo, taskList, rewards] = await Promise.all([
+      getTasks("all", todayKey),
+      getTaskList(),
+      getCheckinRewards(month),
+    ]);
+    data.value = {
+      ...data.value,
+      ...taskInfo,
+      summary: {
+        ...data.value.summary,
+        ...taskInfo.summary,
+        checkin: {
+          ...data.value.summary.checkin,
+          ...taskInfo.summary.checkin,
+          month,
+        },
+      },
+      requestId: data.value.requestId,
+      tasks: taskList,
+    };
+    checkinRewards.value = rewards.rewards;
+  }
+  catch (error) { pageError.value = error instanceof Error ? error.message : "任务数据加载失败"; }
+  finally { pageLoading.value = false; }
 }
 
 function goAction(task: UserTask) {
@@ -82,11 +152,25 @@ function goAction(task: UserTask) {
 function goHome() {
   window.location.hash = "";
 }
+function goGames() { window.location.hash = "#/games"; }
+function goTasks() { window.location.hash = "#/tasks"; }
+const activeNav = ref("任务");
+function navigate(label: string) {
+  activeNav.value = label;
+  if (label === "首页") return goHome();
+  if (label === "游戏") return goGames();
+  if (label === "任务") return goTasks();
+  if (label === "SVIP") return void (window.location.hash = "#/vip");
+  notify(`「${label}」页面即将开放`);
+}
+onMounted(loadTasks);
 </script>
 
 <template>
-  <div class="tasks-page">
-    <header class="tasks-header"><div><span class="eyebrow">DAILY REWARDS</span><h1>任务中心</h1><p>完成任务，领取积分、礼包和 SVIP 专属奖励</p></div><button class="back-button" @click="goHome">← 返回</button></header>
+  <div class="app-shell"><aside class="sidebar"><div class="brand">game<br /><span>盒子</span></div><button class="nav-item" :class="{ active: activeNav === '首页' }" @click="navigate('首页')">⌂<span>首页</span></button><button class="nav-item" :class="{ active: activeNav === '直播' }" @click="navigate('直播')">▶<span>直播</span></button><button class="nav-item" :class="{ active: activeNav === '社区' }" @click="navigate('社区')">◈<span>社区</span></button><button class="nav-item" :class="{ active: activeNav === '美女' }" @click="navigate('美女')">♡<span>美女</span></button><button class="nav-item" :class="{ active: activeNav === '资讯' }" @click="navigate('资讯')">◌<span>资讯</span></button><button class="nav-item" :class="{ active: activeNav === '游戏' }" @click="navigate('游戏')">◉<span>游戏</span></button><button class="nav-item active" @click="navigate('任务')">✓<span>任务</span></button><button class="nav-item" :class="{ active: activeNav === '公会' }" @click="navigate('公会')">♛<span>公会</span></button><button class="nav-item" :class="{ active: activeNav === 'SVIP' }" @click="navigate('SVIP')">S<span>SVIP</span></button><button class="nav-item" :class="{ active: activeNav === '邀请' }" @click="navigate('邀请')">↗<span>邀请</span></button><button class="nav-item" @click="navigate('设置')">⚙<span>设置</span></button></aside><section class="main-area"><header class="topbar"><button class="refresh" @click="notify('任务状态已刷新')">↻</button><button class="home-link" @click="goHome">返回首页</button></header>
+  <main class="tasks-page" style="height: calc(100vh - 64px); overflow-y: scroll; scrollbar-gutter: stable;">
+    <div v-if="pageLoading" class="page-state">正在加载任务数据…</div><div v-else-if="pageError" class="page-state"><span>{{ pageError }}</span><button @click="loadTasks">重试</button></div>
+    <header class="tasks-header"><div><span class="eyebrow">DAILY REWARDS</span><h1>任务中心</h1><p>完成任务，领取积分、礼包和 SVIP 专属奖励</p></div></header>
 
     <section class="summary-grid">
       <article class="summary-card points-card"><div class="summary-icon">✦</div><div><span>我的积分</span><strong>{{ data.summary.points.toLocaleString() }}</strong><small>可兑换礼包和抽奖次数</small></div><button @click="notify('积分商城即将开放')">去兑换 →</button></article>
@@ -94,13 +178,15 @@ function goHome() {
       <article class="summary-card"><div class="summary-icon trophy">♛</div><div><span>任务完成度</span><strong>{{ completionRate }}<em>%</em></strong><small>累计完成 {{ data.summary.totalCompleted }} 个任务</small></div><div class="summary-progress"><i :style="{ width: `${completionRate}%` }"></i></div></article>
     </section>
 
-    <section class="checkin-card"><div class="checkin-title"><div><span class="eyebrow">CHECK IN</span><h2>每日签到</h2></div><span class="month-label">{{ data.summary.checkin.month }}　›</span></div><div class="checkin-days"><div v-for="day in data.summary.checkin.days" :key="day.date" class="checkin-day" :class="{ checked: day.checked, today: day.dayOfMonth === 7 && !day.checked }"><span>周{{ ["日", "一", "二", "三", "四", "五", "六"][new Date(day.date).getDay()] }}</span><b>{{ day.checked ? "✓" : day.dayOfMonth }}</b><small>{{ day.reward?.icon }} {{ day.reward?.amount ? `+${day.reward.amount}` : day.reward?.name }}</small></div></div><div class="checkin-footer"><span>已连续签到 {{ data.summary.continuousCheckinDays }} 天</span><span>本月已签到 6 / 31 天</span></div></section>
+    <section class="checkin-card"><div class="checkin-title"><div><span class="eyebrow">CHECK IN</span><h2>每日签到</h2><p class="checkin-status">{{ todayCheckinLabel }} · 连续签到 {{ data.summary.continuousCheckinDays }} 天</p></div><span class="month-label">{{ data.summary.checkin.month }}　›</span></div><div class="checkin-days"><div v-for="day in calendarDays" :key="day.date" class="checkin-day" :class="{ checked: day.checked, today: day.date === todayKey }"><span>周{{ ["日", "一", "二", "三", "四", "五", "六"][new Date(day.date).getDay()] }}</span><b>{{ day.checked ? "✓" : day.dayOfMonth }}</b><small>{{ day.reward?.icon }} {{ day.reward?.amount ? `+${day.reward.amount}` : day.reward?.name }}</small></div></div><div class="checkin-footer"><span>本月已签到 {{ checkedInDays }} / {{ calendarDays.length }} 天</span><button class="checkin-action" :class="{ done: data.summary.checkin.checkedToday }" @click="checkin">{{ data.summary.checkin.checkedToday ? "今日已签" : "立即签到" }}</button></div></section>
 
     <section class="task-section"><div class="section-heading"><div><span class="eyebrow">TASK LIST</span><h2>任务列表 <i v-if="data.summary.claimableCount">{{ data.summary.claimableCount }} 个可领取</i></h2></div><div class="category-tabs"><button v-for="category in categories" :key="category.key" :class="{ active: activeCategory === category.key }" @click="activeCategory = category.key">{{ category.label }}</button></div></div><div class="task-list"><article v-for="task in filteredTasks" :key="task.id" class="task-row"><div class="task-icon">{{ task.icon }}</div><div class="task-body"><div class="task-title"><h3>{{ task.title }}</h3><span class="task-status" :class="task.status">{{ task.status === "claimable" ? "可领取" : task.status === "claimed" ? "已完成" : task.status === "expired" ? "已过期" : "进行中" }}</span></div><p>{{ task.description }}</p><div class="task-progress"><div><i :style="{ width: `${Math.min(100, task.progress / task.target * 100)}%` }"></i></div><span>{{ task.progress }} / {{ task.target }}</span></div></div><div class="task-rewards"><span>奖励</span><div v-for="reward in task.rewards" :key="reward.name">{{ reward.icon }} {{ reward.name }}<b v-if="reward.amount">+{{ reward.amount }}</b></div></div><button v-if="task.status === 'claimable'" class="claim-button" :disabled="loading" @click="claimTask(task)">领取奖励</button><button v-else-if="task.status === 'in_progress'" class="action-button" @click="goAction(task)">{{ task.actionLabel || "去完成" }}</button><span v-else class="claimed-label">已领取 ✓</span></article><div v-if="!filteredTasks.length" class="empty-state">当前分类暂无任务</div></div></section>
-  </div>
+    <section class="cumulative-rewards"><div class="section-heading"><div><span class="eyebrow">CHECK IN REWARDS</span><h2>累计签到奖励</h2></div><span class="reward-progress">已连续 {{ data.summary.continuousCheckinDays }} 天</span></div><div class="milestone-list"><article v-for="milestone in checkinMilestones" :key="milestone.days" class="milestone" :class="{ completed: milestone.completed }" @click="claimReward(milestone.days)"><div class="milestone-icon">{{ milestone.completed ? "✓" : milestone.icon }}</div><strong>{{ milestone.days }}天</strong><span>{{ milestone.name }}</span><small>{{ milestone.reward }}</small></article></div></section>
+  </main></section></div>
 </template>
 
 <style scoped>
+.app-shell { min-height: 100vh; display: flex; background: #101116; }.sidebar { width: 104px; flex: 0 0 104px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px 10px; background: #0d0e13; border-right: 1px solid #23242c; }.brand { margin-bottom: 22px; color: #f4c94e; font-weight: 800; font-size: 14px; text-align: center; line-height: 1.1; }.brand span { font-size: 11px; }.nav-item { width: 84px; min-height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border: 0; border-radius: 9px; color: #777984; background: transparent; cursor: pointer; font-size: 18px; }.nav-item span { font-size: 11px; }.nav-item:hover, .nav-item .active { color: #f4c94e; }.main-area { min-width: 0; flex: 1; }.topbar { height: 64px; display: flex; align-items: center; gap: 24px; padding: 0 32px; border-bottom: 1px solid #23242c; background: rgba(13,14,19,.62); }.refresh, .home-link { border: 0; color: #a6a7b0; background: transparent; cursor: pointer; }.refresh { font-size: 23px; }.home-link { margin-left: auto; font-size: 12px; }.search-box { width: min(420px, 50vw); height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid #2d2e37; border-radius: 8px; color: #73757f; background: #191a20; }.search-box input { width: 100%; border: 0; outline: 0; color: #eee; background: transparent; font-size: 12px; }
 :global(*) { box-sizing: border-box; }
 :global(body) { margin: 0; background: #111217; color: #f5f1e9; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
 button { font: inherit; cursor: pointer; border: 0; }.tasks-page { min-height: 100vh; max-width: 1250px; margin: auto; padding: 42px 46px 60px; background: radial-gradient(circle at 80% 0, rgba(103,77,30,.14), transparent 30%); }.tasks-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; }.eyebrow { color: #c8a44a; font-size: 10px; letter-spacing: 2px; }.tasks-header h1 { margin: 8px 0 7px; font-size: 31px; }.tasks-header p { margin: 0; color: #8d8e97; font-size: 13px; }.close-button { color: #8d8e97; background: transparent; font-size: 26px; }.summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }.summary-card { min-height: 137px; padding: 22px; display: flex; align-items: flex-start; gap: 14px; position: relative; overflow: hidden; border: 1px solid #302e29; border-radius: 9px; background: linear-gradient(135deg, #24221d, #191a20); }.summary-card > div:nth-child(2) { display: flex; flex-direction: column; gap: 5px; }.summary-card span { color: #9b9aa0; font-size: 12px; }.summary-card strong { color: #f1d16b; font-size: 28px; line-height: 1.1; }.summary-card em { margin-left: 3px; color: #c7a94e; font-size: 13px; font-style: normal; }.summary-card small { color: #73757e; font-size: 10px; }.summary-icon { width: 39px; height: 39px; display: grid; place-items: center; border-radius: 10px; color: #f2ce60; background: rgba(219,177,57,.14); font-size: 21px; }.summary-icon.fire { color: #f07e48; background: rgba(240,126,72,.12); }.summary-icon.trophy { color: #cba4ef; background: rgba(168,85,247,.13); }.summary-card button { position: absolute; right: 18px; bottom: 18px; padding: 6px 9px; color: #e2c258; background: #302c1e; border: 1px solid #65562e; border-radius: 4px; font-size: 10px; }.summary-card button.disabled { color: #76736a; border-color: #48463e; background: transparent; }.summary-progress { position: absolute; left: 22px; right: 22px; bottom: 22px; height: 4px; border-radius: 5px; background: #33343b; }.summary-progress i { display: block; height: 100%; border-radius: inherit; background: #c6a442; transition: width .3s; }
@@ -108,11 +194,39 @@ button { font: inherit; cursor: pointer; border: 0; }.tasks-page { min-height: 1
 @media (max-width: 850px) { .tasks-page { padding: 28px 20px 45px; }.summary-grid { grid-template-columns: 1fr; }.summary-card { min-height: 115px; }.task-row { flex-wrap: wrap; }.task-body { min-width: calc(100% - 55px); }.task-rewards { margin-left: 55px; }.category-tabs { overflow-x: auto; }.checkin-days { gap: 4px; }.checkin-day { min-height: 80px; } }
 @media (max-width: 520px) { .tasks-header h1 { font-size: 25px; }.checkin-card, .task-section { padding: 17px 12px; }.checkin-day small { font-size: 8px; }.section-heading { align-items: flex-start; flex-direction: column; gap: 13px; }.task-rewards { min-width: 120px; }.task-row { gap: 10px; } }
 <style scoped>
-.tasks-page { height: 100vh; overflow-y: auto; scrollbar-color: #6f5a2d #17181d; scrollbar-width: thin; }
+.tasks-page { height: calc(100vh - 64px); overflow-y: scroll; scrollbar-gutter: stable; scrollbar-color: #6f5a2d #17181d; scrollbar-width: thin; }
 .tasks-page::-webkit-scrollbar { width: 8px; }
 .tasks-page::-webkit-scrollbar-track { background: #17181d; }
 .tasks-page::-webkit-scrollbar-thumb { border-radius: 8px; background: #6f5a2d; }
 <style scoped>
 .back-button { padding: 8px 13px; border: 1px solid #5e512d; border-radius: 5px; background: #29251a; color: #d8b84e; font-size: 12px; }
 .back-button:hover { background: #3a3220; color: #f0d16c; }
+</style>
+<style scoped>
+.sidebar { gap: 6px; padding: 20px 10px 15px; }
+.sidebar { min-height: 100vh; }
+.sidebar { position: sticky; top: 0; align-self: flex-start; height: 100vh; max-height: 100vh; overflow-y: auto; box-sizing: border-box; }
+.sidebar > .nav-item:last-child { margin-top: auto; }
+.brand { margin-bottom: 0; }
+.nav-item { width: 100%; min-height: 53px; gap: 4px; font-size: 18px; }
+.nav-item.active { color: #f4c94e; background: linear-gradient(145deg, rgba(244, 201, 78, .2), rgba(244, 201, 78, .04)); }
+.nav-item.settings { margin-top: auto; }
+</style>
+<style scoped>
+.checkin-days { display: none; }
+.tasks-page { display: flex; flex-direction: column; }
+.tasks-page > .tasks-header { order: 1; }
+.tasks-page > .summary-grid { order: 2; }
+.tasks-page > .checkin-card { display: none; }
+.tasks-page > .cumulative-rewards { order: 3; }
+.tasks-page > .task-section { order: 4; }
+.cumulative-rewards { margin-top: 25px; padding: 25px; border: 1px solid #292b33; border-radius: 9px; background: #1a1b21; }.reward-progress { color: #d8b953; font-size: 12px; }.milestone-list { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 20px; }.milestone { min-height: 120px; padding: 14px 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 1px solid #30323a; border-radius: 8px; color: #777984; background: #202128; text-align: center; }.milestone-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; color: #9a9ba3; background: #30323a; font-size: 18px; }.milestone strong { color: #b9bac2; font-size: 13px; }.milestone span, .milestone small { font-size: 10px; }.milestone.completed { border-color: #6a592d; background: rgba(173,139,45,.1); }.milestone.completed .milestone-icon { color: #211c0e; background: #d4b74f; }.milestone.completed strong, .milestone.completed small { color: #e0c35b; }
+@media (max-width: 700px) { .milestone-list { grid-template-columns: repeat(2, 1fr); } }
+</style>
+<style scoped>
+.checkin-status { margin: 7px 0 0; color: #8c8d96; font-size: 11px; }
+.checkin-footer { align-items: center; }
+.checkin-action { padding: 8px 14px; border: 1px solid #6a592d; border-radius: 5px; color: #1e1a0e; background: #dfbd54; font-size: 11px; }
+.checkin-action:hover { background: #f2d56e; }
+.checkin-action.done { color: #89877e; border-color: #48463e; background: #292a2e; cursor: default; }
 </style>

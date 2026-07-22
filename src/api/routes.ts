@@ -23,4 +23,5 @@ export const clientApi = {
   searchHot: `${CLIENT_API_PREFIX}/search/hot`,
   searchHistory: `${CLIENT_API_PREFIX}/search/history`,
   searchEvents: `${CLIENT_API_PREFIX}/search/events`,
+  vipLevels: `${CLIENT_API_PREFIX}/vip/levels`,
 } as const

@@ -542,6 +542,18 @@ POST   /api/users/me/deletion/confirm
 
 ### 用户端信息架构
 
+#### 全局应用壳规范
+
+所有登录后的业务页面必须持续保留统一的应用壳，不允许进入二级页面后移除主导航或顶部工具栏：
+
+- 左侧导航栏在首页、游戏、游戏详情、区服选择、任务、直播、社区、资讯、SVIP、抽奖和设置等页面始终存在。
+- 顶部栏在所有业务页面始终存在，包含页面刷新/返回能力、页面上下文搜索、消息入口和账户入口；页面需要时可增加返回按钮或其他操作。
+- 当前页面对应的左侧导航项必须保持高亮，例如游戏详情和区服选择高亮“游戏”，任务页面高亮“任务”。
+- 顶部搜索应根据当前页面切换搜索范围：首页支持游戏、主播、区服、礼包和文章；游戏相关页面默认只搜索游戏；其他内容页面使用对应内容类型。
+- 页面主体只替换应用壳下的内容区，禁止各页面重复实现独立的 Sidebar、TopBar 和账户入口。
+- 推荐使用 `AppShell.vue`、`Sidebar.vue` 和 `TopBar.vue` 统一承载应用壳，业务页面通过插槽或页面状态注入主体内容。
+- 移动窗口或窄屏下允许压缩导航和工具栏，但不得隐藏全局导航能力；可将文字收缩为图标，并保留当前页面状态。
+
 左侧主导航预计包含：
 
 - 首页：推荐直播、热门游戏、新区、活动和广告。
@@ -568,7 +580,7 @@ POST   /api/users/me/deletion/confirm
 
 - 推荐直播大卡片：直播画面、直播状态、主播信息和“进入直播间”。
 - 新服推荐：即将开服、开服倒计时、热门程度、推荐区服和进入游戏。
-- 游戏推荐：热门、最新、传世、传奇3 等分类。
+- 游戏推荐：热门、最新等分类。
 - 活动 Banner：充值、首充、礼包、抽奖和限时活动。
 - 右侧广告位：主播推广、游戏推广、新区推广和充值活动。
 - 倒计时组件：开服、活动或充值奖励截止时间。
@@ -613,7 +625,6 @@ POST   /api/users/me/deletion/confirm
 - 抽奖是否消耗积分、充值额度、任务次数或平台币。
 - 直播是否支持礼物、弹幕、私聊和未成年人相关限制。
 - 广告是否由后台动态配置、按用户定向，还是固定素材。
-- 传世、传奇3 是否为独立游戏分类，还是不同运营渠道。
 
 ### 截图还原的 MVP 优先级
 
@@ -751,7 +762,7 @@ API 基础路径由环境变量配置，默认 `/api`。所有请求使用 `Auth
 | 登出 | `POST /api/auth/logout` | `{refreshToken?}` | 清理本地登录态 |
 | 游戏列表 | `GET /api/games` | `tag,status,sort,page,pageSize` | 大厅卡片和筛选 |
 | 游戏详情 | `GET /api/games/:id` | 路径 `id` | 详情、公告、礼包入口 |
-| 区服列表 | `GET /api/games/:gameId/servers` | `status,recommended` | 区服选择和倒计时 |
+| 新服推荐 | `GET /api/v1/client/game-servers` | `page,pageSize,recommended=true` | 推荐页新服卡片和倒计时 |
 | 版本查询 | `GET /api/client/versions/latest` | `gameId,platform,channel,version?` | 判断下载/更新/强更 |
 | 下载事件 | `POST /api/downloads/events` | `eventType,gameId,version,result,errorCode` | 上报下载/校验/安装结果 |
 | 启动票据 | `POST /api/games/:gameId/launch-ticket` | `{serverId,clientVersion}` | 启动前获取短期票据 |
