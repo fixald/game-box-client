@@ -5,9 +5,8 @@ import { getVipLevels, type VipLevel } from "../../api/vip";
 import { getCurrentAccount } from "../../utils/auth";
 
 const navItems = [
-  { icon: "⌂", label: "首页" }, { icon: "▶", label: "直播" }, { icon: "◈", label: "社区" },
-  { icon: "♡", label: "美女" }, { icon: "◉", label: "游戏" },
-  { icon: "✓", label: "任务" }, { icon: "♛", label: "公会" }, { icon: "S", label: "SVIP" }, { icon: "↗", label: "邀请" },
+  { icon: "⌂", label: "首页" }, { icon: "▶", label: "直播" }, { icon: "◉", label: "游戏" },
+  { icon: "✓", label: "任务" }, { icon: "S", label: "SVIP" },
 ];
 const currentAccount = ref(getCurrentAccount());
 

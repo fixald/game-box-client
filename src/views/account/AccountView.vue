@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { getAccountStats, getCurrentAccountInfo, getDownloads, getFavoriteGames, getMessages, getRecentGames } from "../../api/account";
-import { clearSession, getCurrentAccount } from "../../utils/auth";
+import { clearSession, getAccountProfile, getCurrentAccount, saveAccountProfile } from "../../utils/auth";
 
-const account = ref(getCurrentAccount());
+const profile = ref(getAccountProfile());
+const account = ref(profile.value?.account || getCurrentAccount());
 const activeTab = ref("overview");
 const loading = ref(true);
 const error = ref("");
@@ -23,10 +24,14 @@ const notify = (value: string) => window.alert(value);
 async function loadAccount() {
   loading.value = true; error.value = "";
   try {
-    const [profile, summary, recent, favorite, download, message] = await Promise.all([
+    const [accountResult, summary, recent, favorite, download, message] = await Promise.all([
       getCurrentAccountInfo(), getAccountStats(), getRecentGames(), getFavoriteGames(), getDownloads(), getMessages(),
     ]);
-    account.value = profile.user?.account || account.value;
+    if (accountResult.user) {
+      saveAccountProfile(accountResult.user);
+      profile.value = accountResult.user;
+      account.value = accountResult.user.account || accountResult.user.nickname || account.value;
+    }
     stats.value = summary.stats;
     recentGames.value = recent.games;
     favorites.value = favorite.list;
@@ -46,7 +51,7 @@ onMounted(loadAccount);
   <div class="account-page">
     <header><button class="back" @click="goHome">← 返回首页</button><div><small>USER CENTER</small><h1>个人中心</h1></div><button class="message" @click="activeTab = 'messages'">♢<i v-if="unreadCount">{{ unreadCount }}</i></button></header>
     <p v-if="error" class="error">{{ error }}</p>
-    <section class="profile"><div class="avatar">{{ account.slice(0, 1).toUpperCase() }}</div><div><h2>{{ account }} <b>SVIP</b></h2><p>game盒子用户 · 账号已安全登录</p><button @click="activeTab = 'security'">账号安全</button></div></section>
+    <section class="profile"><img v-if="profile?.avatarUrl" class="avatar avatar-image" :src="profile.avatarUrl" alt="用户头像" /><div v-else class="avatar">{{ (profile?.nickname || account).slice(0, 1).toUpperCase() }}</div><div><h2>{{ profile?.nickname || account }} <b v-if="(profile?.vip?.level || 0) > 0">SVIP{{ profile?.vip?.level }}</b></h2><p>{{ account }} · 账号已安全登录</p><button @click="activeTab = 'security'">账号安全</button></div></section>
     <nav><button v-for="tab in tabs" :key="tab.key" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key">{{ tab.label }}<b v-if="tab.key === 'messages' && unreadCount">{{ unreadCount }}</b></button></nav>
     <main v-if="loading" class="empty">正在加载个人中心…</main>
     <main v-else-if="activeTab === 'overview'">

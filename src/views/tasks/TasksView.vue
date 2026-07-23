@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import type { TaskCategory, TasksResponse, UserTask } from "../../types/tasks";
 import { claimCheckinReward, claimTask as claimTaskApi, getCheckinRewards, getTaskList, getTasks, type CheckinReward, submitCheckin } from "../../api/tasks";
+import { clearSession, getCurrentAccount } from "../../utils/auth";
 
 const categories: Array<{ key: "all" | TaskCategory; label: string }> = [
   { key: "all", label: "全部任务" },
@@ -43,7 +44,6 @@ const data = ref<TasksResponse>({
     { id: "task-8", category: "daily", title: "完成一次签到", description: "在任务中心完成每日签到", icon: "✓", progress: 0, target: 1, status: "in_progress", rewards: [{ type: "points", name: "积分", amount: 20, icon: "✦" }] },
     { id: "task-9", category: "game", title: "查看游戏详情", description: "浏览任意一款游戏的详情页面", icon: "◉", progress: 0, target: 1, status: "in_progress", rewards: [{ type: "points", name: "积分", amount: 15, icon: "✦" }], actionLabel: "去游戏", actionRoute: "#/games" },
     { id: "task-10", category: "game", title: "进入推荐区服", description: "从新服推荐中选择一个区服", icon: "⚑", progress: 0, target: 1, status: "in_progress", rewards: [{ type: "gift", name: "区服礼包", icon: "🎁" }] },
-    { id: "task-11", category: "social", title: "查看一条资讯", description: "阅读平台最新游戏资讯", icon: "▤", progress: 0, target: 1, status: "in_progress", rewards: [{ type: "points", name: "积分", amount: 10, icon: "✦" }], actionLabel: "去资讯", actionRoute: "#/news" },
     { id: "task-12", category: "newbie", title: "完成首次区服选择", description: "选择喜欢的游戏区服", icon: "◇", progress: 0, target: 1, status: "in_progress", rewards: [{ type: "vip_exp", name: "SVIP经验", amount: 50, icon: "♛" }] },
   ],
 });
@@ -54,6 +54,11 @@ const pageLoading = ref(false);
 const pageError = ref("");
 const checkinRewards = ref<CheckinReward[]>([]);
 const toast = ref("");
+const currentAccount = ref(getCurrentAccount());
+const navItems = [
+  { icon: "⌂", label: "首页" }, { icon: "▶", label: "直播" },
+  { icon: "◉", label: "游戏" }, { icon: "✓", label: "任务" }, { icon: "S", label: "SVIP" },
+];
 const filteredTasks = computed(() => activeCategory.value === "all" ? data.value.tasks : data.value.tasks.filter((task) => task.category === activeCategory.value));
 const completionRate = computed(() => data.value.tasks.length
   ? Math.round(data.value.tasks.filter((task) => task.status === "claimed").length / data.value.tasks.length * 100)
@@ -163,11 +168,13 @@ function navigate(label: string) {
   if (label === "SVIP") return void (window.location.hash = "#/vip");
   notify(`「${label}」页面即将开放`);
 }
+function goAccount() { window.location.hash = "#/account"; }
+function logout() { clearSession(); window.location.hash = "#/login"; }
 onMounted(loadTasks);
 </script>
 
 <template>
-  <div class="app-shell"><aside class="sidebar"><div class="brand">game<br /><span>盒子</span></div><button class="nav-item" :class="{ active: activeNav === '首页' }" @click="navigate('首页')">⌂<span>首页</span></button><button class="nav-item" :class="{ active: activeNav === '直播' }" @click="navigate('直播')">▶<span>直播</span></button><button class="nav-item" :class="{ active: activeNav === '社区' }" @click="navigate('社区')">◈<span>社区</span></button><button class="nav-item" :class="{ active: activeNav === '美女' }" @click="navigate('美女')">♡<span>美女</span></button><button class="nav-item" :class="{ active: activeNav === '资讯' }" @click="navigate('资讯')">◌<span>资讯</span></button><button class="nav-item" :class="{ active: activeNav === '游戏' }" @click="navigate('游戏')">◉<span>游戏</span></button><button class="nav-item active" @click="navigate('任务')">✓<span>任务</span></button><button class="nav-item" :class="{ active: activeNav === '公会' }" @click="navigate('公会')">♛<span>公会</span></button><button class="nav-item" :class="{ active: activeNav === 'SVIP' }" @click="navigate('SVIP')">S<span>SVIP</span></button><button class="nav-item" :class="{ active: activeNav === '邀请' }" @click="navigate('邀请')">↗<span>邀请</span></button><button class="nav-item" @click="navigate('设置')">⚙<span>设置</span></button></aside><section class="main-area"><header class="topbar"><button class="refresh" @click="notify('任务状态已刷新')">↻</button><button class="home-link" @click="goHome">返回首页</button></header>
+  <div class="gamebox-shell"><aside class="gamebox-sidebar"><div class="brand"><span class="brand-mark">game</span><span>盒子</span></div><nav class="side-nav" aria-label="主导航"><button v-for="item in navItems" :key="item.label" class="side-item" :class="{ active: activeNav === item.label }" @click="navigate(item.label)"><span class="side-icon">{{ item.icon }}</span><span>{{ item.label }}</span></button></nav><div class="sidebar-footer"><button class="side-item" @click="navigate('设置')"><span class="side-icon">⚙</span><span>设置</span></button></div></aside><section class="gamebox-main"><header class="topbar"><div class="window-actions"><button aria-label="刷新" @click="notify('任务状态已刷新')">↻</button></div><div class="user-actions"><button class="message-button" aria-label="消息">♢</button><button class="account-button" aria-label="个人中心" @click="goAccount"><span class="avatar">{{ currentAccount.slice(0, 1).toUpperCase() }}</span></button><button class="logout-button" @click="logout">退出</button></div></header>
   <main class="tasks-page" style="height: calc(100vh - 64px); overflow-y: scroll; scrollbar-gutter: stable;">
     <div v-if="pageLoading" class="page-state">正在加载任务数据…</div><div v-else-if="pageError" class="page-state"><span>{{ pageError }}</span><button @click="loadTasks">重试</button></div>
     <header class="tasks-header"><div><span class="eyebrow">DAILY REWARDS</span><h1>任务中心</h1><p>完成任务，领取积分、礼包和 SVIP 专属奖励</p></div></header>
@@ -201,6 +208,9 @@ button { font: inherit; cursor: pointer; border: 0; }.tasks-page { min-height: 1
 <style scoped>
 .back-button { padding: 8px 13px; border: 1px solid #5e512d; border-radius: 5px; background: #29251a; color: #d8b84e; font-size: 12px; }
 .back-button:hover { background: #3a3220; color: #f0d16c; }
+</style>
+<style scoped>
+.gamebox-shell { min-height: 100vh; display: flex; background: #101116; }.gamebox-sidebar { width: 104px; flex: 0 0 104px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px 10px 15px; background: rgba(13,14,19,.96); border-right: 1px solid #23242c; }.brand { margin: 0; color: #f4c94e; font-size: 12px; letter-spacing: 1px; display: flex; flex-direction: column; align-items: center; gap: 3px; }.brand-mark { font-size: 18px; line-height: 17px; font-style: italic; }.side-nav { width: 100%; margin-top: 28px; display: flex; flex-direction: column; gap: 6px; }.side-item { width: 100%; min-height: 53px; border: 0; border-radius: 10px; color: #777984; background: transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; cursor: pointer; }.side-item:hover, .side-item.active { color: #f4c94e; background: linear-gradient(145deg, rgba(244,201,78,.2), rgba(244,201,78,.04)); }.side-icon { height: 19px; font-size: 18px; line-height: 19px; }.sidebar-footer { width: 100%; margin-top: auto; }.gamebox-main { min-width: 0; flex: 1; }.topbar { height: 64px; padding: 0 32px; display: flex; align-items: center; gap: 28px; border-bottom: 1px solid #23242c; background: rgba(13,14,19,.62); }.window-actions button { border: 0; color: #858791; background: transparent; font-size: 24px; cursor: pointer; }.user-actions { margin-left: auto; display: flex; align-items: center; gap: 18px; }.message-button, .account-button, .logout-button { border: 0; background: transparent; cursor: pointer; }.message-button { color: #8d8e98; font-size: 22px; }.account-button .avatar { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid #4b4e5a; border-radius: 50%; color: #f2d36b; background: #30323b; }.logout-button { padding: 6px 9px; border: 1px solid #383a44; border-radius: 4px; color: #8f919b; font-size: 10px; }.tasks-page { min-height: calc(100vh - 64px); }.main-area { min-width: 0; flex: 1; } @media (max-width: 680px) { .gamebox-sidebar { width: 70px; flex-basis: 70px; }.topbar { padding: 0 15px; gap: 10px; }.logout-button { display: none; } }
 </style>
 <style scoped>
 .sidebar { gap: 6px; padding: 20px 10px 15px; }

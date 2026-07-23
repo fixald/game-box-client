@@ -12,19 +12,14 @@ const channels: Array<{ key: HomeChannel; label: string }> = [
   { key: "follow", label: "关注" },
   { key: "recommend", label: "推荐" },
   { key: "new-server", label: "新服" },
-  { key: "beauty", label: "美女" },
 ];
 
 const navItems = [
   { icon: "⌂", label: "首页" },
   { icon: "▶", label: "直播" },
-  { icon: "◈", label: "社区" },
-  { icon: "♡", label: "美女" },
   { icon: "◉", label: "游戏" },
   { icon: "✓", label: "任务", badge: true },
-  { icon: "♛", label: "公会" },
   { icon: "S", label: "SVIP" },
-  { icon: "↗", label: "邀请" },
 ];
 
 const feed = ref<HomeFeed>({

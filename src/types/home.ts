@@ -1,4 +1,4 @@
-export type HomeChannel = "follow" | "recommend" | "new-server" | "beauty";
+export type HomeChannel = "follow" | "recommend" | "new-server";
 
 export interface LiveRoom {
   id: string;

@@ -33,7 +33,7 @@ export function getRecentGames() {
 }
 
 export function getFavoriteGames() {
-  return apiRequest<{ list: Array<{ gameId: string; gameName: string; serverName: string; lastPlayedAt?: string; installed: boolean; favorite: boolean }> }>(`${clientApi.account}/games/favorites?page=1&pageSize=20`, { headers: authHeaders() });
+  return apiRequest<{ list: Array<{ gameId: string; gameName: string; serverName: string; lastPlayedAt?: string; installed: boolean; favorite: boolean }> }>(`${clientApi.account}/games/favorite?page=1&pageSize=20`, { headers: authHeaders() });
 }
 
 export function getDownloads() {
