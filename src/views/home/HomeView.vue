@@ -7,6 +7,8 @@ import { getSearchHistory, popularSearches, sanitizeSearchQuery } from "../../ut
 import { getSuggestions } from "../../api/search";
 import { getRecommendedServers, normalizeServerList } from "../../api/servers";
 import { getPopularGames, normalizeGameList } from "../../api/games";
+import { getHomeBanners, normalizeHomeBanners } from "../../api/home";
+import { getLiveRooms, normalizeLiveRooms } from "../../api/live";
 
 const channels: Array<{ key: HomeChannel; label: string }> = [
   { key: "follow", label: "关注" },
@@ -188,6 +190,36 @@ async function loadPopularGames() {
   } finally { gamesLoading.value = false; }
 }
 
+async function loadHomeBanners() {
+  try {
+    const response = await getHomeBanners();
+    const banners = normalizeHomeBanners(response);
+    if (banners.length) feed.value.banners = banners;
+  } catch {
+    // Banner 接口不可用时保留页面占位数据，避免首页布局塌陷。
+  }
+}
+
+async function loadLiveRooms() {
+  try {
+    const response = await getLiveRooms(1, 6);
+    feed.value.liveRooms = normalizeLiveRooms(response);
+  } catch {
+    // 直播接口不可用时保留当前内容，等待服务端接口上线。
+  }
+}
+
+async function loadHomeAccount() {
+  try {
+    const response = await getCurrentAccountInfo();
+    const source = response.user ?? response;
+    if (typeof source.taskUnreadCount === "number") feed.value.taskUnreadCount = source.taskUnreadCount;
+    if (typeof source.messageUnreadCount === "number") feed.value.messageUnreadCount = source.messageUnreadCount;
+  } catch {
+    // App 层已负责会话校验；首页只保留当前展示状态。
+  }
+}
+
 function enterGame(game: RecommendedGame) {
   window.location.hash = `#/games/${encodeURIComponent(game.id)}`;
 }
@@ -237,6 +269,9 @@ onBeforeUnmount(() => { window.clearInterval(timer); window.clearTimeout(suggest
 onMounted(() => window.addEventListener("keydown", handleSearchShortcut));
 onMounted(loadRecommendedServers);
 onMounted(loadPopularGames);
+onMounted(loadHomeBanners);
+onMounted(loadHomeAccount);
+onMounted(loadLiveRooms);
 watch(activeChannel, (channel) => {
   if (channel === "new-server") void loadRecommendedServers(20);
 });

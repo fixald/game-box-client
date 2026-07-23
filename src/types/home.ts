@@ -2,6 +2,8 @@ export type HomeChannel = "follow" | "recommend" | "new-server";
 
 export interface LiveRoom {
   id: string;
+  gameId?: string;
+  serverId?: string;
   title: string;
   streamerName: string;
   streamerAvatar?: string;
@@ -10,6 +12,9 @@ export interface LiveRoom {
   gameName: string;
   serverName: string;
   status: "live" | "upcoming" | "replay";
+  roomUrl?: string;
+  startedAt?: string;
+  endedAt?: string | null;
   accent: string;
 }
 
@@ -44,6 +49,9 @@ export interface HomeBanner {
   actionLabel: string;
   accent: string;
   expiresAt?: string;
+  imageUrl?: string;
+  linkType?: string;
+  linkValue?: string;
 }
 
 export interface HomeFeed {

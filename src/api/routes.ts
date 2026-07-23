@@ -24,4 +24,6 @@ export const clientApi = {
   searchHistory: `${CLIENT_API_PREFIX}/search/history`,
   searchEvents: `${CLIENT_API_PREFIX}/search/events`,
   vipLevels: `${CLIENT_API_PREFIX}/vip/levels`,
+  banners: `${CLIENT_API_PREFIX}/banners`,
+  liveRooms: `${CLIENT_API_PREFIX}/live/rooms`,
 } as const

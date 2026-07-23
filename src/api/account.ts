@@ -7,8 +7,12 @@ export interface AccountResponse {
     account?: string;
     nickname?: string;
     vip?: { level?: number; growthValue?: number; growthTarget?: number; expiresAt?: string | null };
+    taskUnreadCount?: number;
+    messageUnreadCount?: number;
   };
   stats?: Record<string, number>;
+  taskUnreadCount?: number;
+  messageUnreadCount?: number;
 }
 
 export function getCurrentAccountInfo() {
