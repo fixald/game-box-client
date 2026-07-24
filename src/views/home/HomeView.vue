@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import Hls from "hls.js";
 import type { HomeChannel, HomeFeed, NewServer, RecommendedGame } from "../../types/home";
 import { getCurrentAccountInfo } from "../../api/account";
 import { clearSession, getCurrentAccount } from "../../utils/auth";
@@ -23,6 +24,48 @@ const navItems = [
   { icon: "✓", label: "任务", badge: true },
   { icon: "S", label: "SVIP" },
 ];
+
+const heroVideoRef = ref<HTMLVideoElement | null>(null);
+let heroHls: Hls | null = null;
+const heroStreamReady = ref(false);
+const heroStreamError = ref(false);
+
+function destroyHeroHls() {
+  if (heroHls) {
+    try { heroHls.destroy(); } catch { /* ignore */ }
+    heroHls = null;
+  }
+}
+
+function initHeroHls() {
+  destroyHeroHls();
+  heroStreamReady.value = false;
+  heroStreamError.value = false;
+  const room = feed.value.liveRooms[0];
+  const video = heroVideoRef.value;
+  const roomUrl = room?.roomUrl;
+  if (!video || !roomUrl || !room) return;
+  if (room.status !== "live") return;
+  if (video.canPlayType("application/vnd.apple.mpegurl")) {
+    video.src = roomUrl;
+    video.addEventListener("loadedmetadata", () => { heroStreamReady.value = true; void video.play().catch(() => { /* autoplay blocked */ }); }, { once: true });
+    video.addEventListener("error", () => { heroStreamError.value = true; }, { once: true });
+    return;
+  }
+  if (!Hls.isSupported()) { heroStreamError.value = true; return; }
+  heroHls = new Hls({ enableWorker: true, lowLatencyMode: true, backBufferLength: 60 });
+  heroHls.loadSource(roomUrl);
+  heroHls.attachMedia(video);
+  heroHls.on(Hls.Events.MANIFEST_PARSED, () => {
+    heroStreamReady.value = true;
+    void video.play().catch(() => { /* autoplay blocked */ });
+  });
+  heroHls.on(Hls.Events.ERROR, (_event, data) => {
+    if (data.fatal) heroStreamError.value = true;
+  });
+}
+
+const heroHasStream = computed(() => !!feed.value.liveRooms[0]?.roomUrl && feed.value.liveRooms[0]?.status === "live");
 
 const feed = ref<HomeFeed>({
   requestId: "mock_home_001",
@@ -204,6 +247,8 @@ async function loadLiveRooms() {
   try {
     const response = await getLiveRooms(1, 6);
     feed.value.liveRooms = normalizeLiveRooms(response);
+    await nextTick();
+    initHeroHls();
   } catch {
     // 直播接口不可用时保留当前内容，等待服务端接口上线。
   }
@@ -265,13 +310,14 @@ async function goAccount() {
   }
 }
 
-onBeforeUnmount(() => { window.clearInterval(timer); window.clearTimeout(suggestionTimer); suggestionController.value?.abort(); });
+onBeforeUnmount(() => { window.clearInterval(timer); window.clearTimeout(suggestionTimer); suggestionController.value?.abort(); destroyHeroHls(); });
 onMounted(() => window.addEventListener("keydown", handleSearchShortcut));
 onMounted(loadRecommendedServers);
 onMounted(loadPopularGames);
 onMounted(loadHomeBanners);
 onMounted(loadHomeAccount);
 onMounted(loadLiveRooms);
+onMounted(async () => { await nextTick(); initHeroHls(); });
 watch(activeChannel, (channel) => {
   if (channel === "new-server") void loadRecommendedServers(20);
 });
@@ -305,7 +351,26 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleSearchShortcut
 
         <section class="hero-grid">
           <article class="hero-live" :style="{ '--live-accent': feed.liveRooms[0].accent }">
-            <div class="live-art"><div class="art-glow"></div><span class="live-game-label">LIVE · {{ feed.liveRooms[0].gameName }}</span><div class="fake-character">⚔</div><div class="fake-battle">✦　✧　✦</div></div>
+            <div class="live-art" :class="{ 'has-stream': heroHasStream, 'stream-ready': heroStreamReady, 'stream-error': heroStreamError }">
+              <video
+                v-if="heroHasStream"
+                ref="heroVideoRef"
+                class="live-video"
+                :muted="true"
+                :autoplay="true"
+                :loop="false"
+                :playsinline="true"
+                preload="auto"
+              ></video>
+              <div v-if="heroHasStream && !heroStreamReady && !heroStreamError" class="stream-loading"><span></span>加载直播流…</div>
+              <div v-if="heroStreamError" class="stream-error-tip">直播流加载失败</div>
+              <template v-if="!heroHasStream || !heroStreamReady">
+                <div class="art-glow"></div>
+                <div class="fake-character">⚔</div>
+                <div class="fake-battle">✦　✧　✦</div>
+              </template>
+              <span class="live-game-label">LIVE · {{ feed.liveRooms[0].gameName }}</span>
+            </div>
             <div class="hero-live-info"><div><span class="live-status"><i></i> 正在直播</span><span class="viewers">{{ feed.liveRooms[0].viewers.toLocaleString() }} 人观看</span></div><h1>{{ feed.liveRooms[0].title }}</h1><p>{{ feed.liveRooms[0].streamerName }} · {{ feed.liveRooms[0].serverName }}</p><button class="primary-button" @click="notify('正在进入直播间…')">进入直播间 <span>→</span></button></div>
           </article>
           <aside class="hero-promo" :style="{ '--promo-accent': currentBanner?.accent }"><span class="promo-eyebrow">{{ currentBanner?.eyebrow }}</span><h2>{{ currentBanner?.title }}</h2><p>{{ currentBanner?.description }}</p><button class="promo-button" @click="notify(currentBanner?.actionLabel ?? '活动详情')">{{ currentBanner?.actionLabel }} <span>→</span></button><div class="promo-dots"><button v-for="(_, index) in feed.banners" :key="index" :class="{ active: bannerIndex === index }" @click="bannerIndex = index"></button></div><button class="carousel-arrow prev" @click="switchBanner(-1)">‹</button><button class="carousel-arrow next" @click="switchBanner(1)">›</button></aside>
@@ -337,7 +402,7 @@ button { border: 0; color: inherit; cursor: pointer; }
 .brand { color: #f4c94e; font-weight: 800; font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 3px; letter-spacing: 1px; white-space: nowrap; }.brand-mark { font-size: 18px; line-height: 17px; font-style: italic; }.side-nav { width: 100%; margin-top: 28px; display: flex; flex-direction: column; gap: 6px; }.side-item { position: relative; width: 100%; min-height: 53px; border-radius: 10px; background: transparent; color: #777984; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; transition: .2s; }.side-item:hover, .side-item.active { color: #f4c94e; background: linear-gradient(145deg, rgba(244, 201, 78, .2), rgba(244, 201, 78, .04)); }.side-icon { height: 19px; font-size: 18px; line-height: 19px; }.nav-badge { position: absolute; top: 5px; right: 12px; min-width: 15px; padding: 1px 4px; border-radius: 8px; background: #ec4e55; color: white; font-size: 9px; font-style: normal; }.sidebar-footer { margin-top: auto; width: 100%; }
 .gamebox-main { min-width: 0; flex: 1; }.topbar { height: 64px; padding: 0 32px; border-bottom: 1px solid #23242c; display: flex; align-items: center; gap: 28px; background: rgba(13, 14, 19, .62); }.window-actions { display: flex; gap: 14px; }.window-actions button { background: transparent; color: #858791; font-size: 24px; line-height: 1; }.window-actions button:hover { color: #f4c94e; }.search-box { width: min(360px, 35vw); height: 34px; padding: 0 10px; display: flex; align-items: center; gap: 8px; border: 1px solid #2d2e37; border-radius: 8px; background: #191a20; color: #73757f; }.search-box input { width: 100%; border: 0; outline: 0; color: #eee; background: transparent; font-size: 12px; }.search-box kbd { color: #5d606c; font-size: 10px; white-space: nowrap; }.user-actions { margin-left: auto; display: flex; align-items: center; gap: 18px; }.message-button { position: relative; background: transparent; color: #8d8e98; font-size: 22px; }.message-button i { position: absolute; top: 0; right: -2px; width: 6px; height: 6px; border-radius: 50%; background: #e65b60; }.login-button { padding: 8px 13px; color: #d3b65a; background: #29251a; border: 1px solid #5e512d; border-radius: 6px; font-size: 12px; }.avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: #30323b; color: #aaa; font-size: 12px; }
 .home-content { max-width: 1450px; margin: auto; padding: 0 40px 48px; }.channel-tabs { height: 64px; display: flex; align-items: center; gap: 38px; }.channel-tabs button { position: relative; height: 100%; padding: 0; background: transparent; color: #868791; font-size: 14px; }.channel-tabs button:hover, .channel-tabs button.selected { color: #f5d254; }.channel-tabs button.selected::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 30px; height: 2px; transform: translateX(-50%); background: #eac34a; box-shadow: 0 0 10px #eac34a; }
-.hero-grid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(260px, .72fr); gap: 14px; }.hero-live, .hero-promo { min-height: 300px; overflow: hidden; position: relative; border: 1px solid #2b2d36; border-radius: 8px; background: #1b1c23; }.hero-live { display: grid; grid-template-columns: minmax(230px, 1.45fr) minmax(230px, 1fr); }.live-art { position: relative; overflow: hidden; background: radial-gradient(circle at 65% 25%, color-mix(in srgb, var(--live-accent), transparent 30%), transparent 35%), linear-gradient(135deg, #172338, #05070c 78%); }.live-art::before, .live-art::after { content: ""; position: absolute; border-radius: 50%; filter: blur(2px); }.live-art::before { width: 180px; height: 180px; right: 18%; top: 25%; background: color-mix(in srgb, var(--live-accent), transparent 45%); box-shadow: 0 0 80px 35px color-mix(in srgb, var(--live-accent), transparent 55%); }.live-art::after { inset: 0; background: repeating-linear-gradient(122deg, transparent 0 35px, rgba(255,255,255,.03) 36px 37px); transform: skewX(-20deg); }.art-glow { position: absolute; width: 90px; height: 140px; top: 78px; right: 29%; border-radius: 50% 50% 25% 25%; background: linear-gradient(90deg, #b3e6ff, #4d7cff 50%, #e6c96c); box-shadow: 0 0 30px #61b3ff; transform: rotate(20deg); opacity: .8; }.fake-character { position: absolute; z-index: 1; right: 25%; top: 97px; color: #fff3c4; font-size: 72px; text-shadow: 0 0 16px #f1c75b; }.fake-battle { position: absolute; z-index: 2; right: 17%; top: 45%; color: #f7ce59; font-size: 25px; text-shadow: 0 0 10px #f00; }.live-game-label { position: absolute; z-index: 3; top: 14px; left: 16px; padding: 4px 8px; border-radius: 3px; background: rgba(0,0,0,.55); color: #e2bb55; font-size: 10px; }.hero-live-info { align-self: end; padding: 24px 26px; background: linear-gradient(180deg, transparent, rgba(19,20,27,.96) 32%); }.live-status { color: #ef626a; font-size: 11px; }.live-status i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #ef626a; }.viewers { margin-left: 12px; color: #858792; font-size: 11px; }.hero-live h1 { margin: 12px 0 8px; color: #f7f4ed; font-size: clamp(18px, 2vw, 26px); line-height: 1.25; }.hero-live-info p { margin: 0 0 18px; color: #9899a3; font-size: 12px; }.primary-button, .promo-button { padding: 10px 16px; border-radius: 5px; background: #e8bd43; color: #17130c; font-weight: 700; font-size: 12px; }.primary-button span, .promo-button span { margin-left: 12px; font-size: 16px; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(260px, .72fr); gap: 14px; }.hero-live, .hero-promo { min-height: 300px; overflow: hidden; position: relative; border: 1px solid #2b2d36; border-radius: 8px; background: #1b1c23; }.hero-live { display: grid; grid-template-columns: minmax(230px, 1.45fr) minmax(230px, 1fr); }.live-art { position: relative; overflow: hidden; background: radial-gradient(circle at 65% 25%, color-mix(in srgb, var(--live-accent), transparent 30%), transparent 35%), linear-gradient(135deg, #172338, #05070c 78%); }.live-art::before, .live-art::after { content: ""; position: absolute; border-radius: 50%; filter: blur(2px); }.live-art::before { width: 180px; height: 180px; right: 18%; top: 25%; background: color-mix(in srgb, var(--live-accent), transparent 45%); box-shadow: 0 0 80px 35px color-mix(in srgb, var(--live-accent), transparent 55%); }.live-art::after { inset: 0; background: repeating-linear-gradient(122deg, transparent 0 35px, rgba(255,255,255,.03) 36px 37px); transform: skewX(-20deg); }.live-art.has-stream::before, .live-art.has-stream::after { opacity: .35; }.live-art.stream-ready::before, .live-art.stream-ready::after { display: none; }.live-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; background: #000; }.stream-loading { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 10px; color: #c9cbce; font-size: 12px; background: rgba(0,0,0,.5); backdrop-filter: blur(4px); }.stream-loading span { width: 16px; height: 16px; border: 2px solid rgba(244,201,78,.35); border-top-color: #e8bd43; border-radius: 50%; animation: hero-spin 1s linear infinite; }.stream-error-tip { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; color: #a87a7a; font-size: 12px; background: rgba(0,0,0,.6); }@keyframes hero-spin { to { transform: rotate(360deg); } }.art-glow { position: absolute; width: 90px; height: 140px; top: 78px; right: 29%; border-radius: 50% 50% 25% 25%; background: linear-gradient(90deg, #b3e6ff, #4d7cff 50%, #e6c96c); box-shadow: 0 0 30px #61b3ff; transform: rotate(20deg); opacity: .8; z-index: 1; }.fake-character { position: absolute; z-index: 1; right: 25%; top: 97px; color: #fff3c4; font-size: 72px; text-shadow: 0 0 16px #f1c75b; }.fake-battle { position: absolute; z-index: 2; right: 17%; top: 45%; color: #f7ce59; font-size: 25px; text-shadow: 0 0 10px #f00; }.live-game-label { position: absolute; z-index: 3; top: 14px; left: 16px; padding: 4px 8px; border-radius: 3px; background: rgba(0,0,0,.55); color: #e2bb55; font-size: 10px; }.hero-live-info { align-self: end; padding: 24px 26px; background: linear-gradient(180deg, transparent, rgba(19,20,27,.96) 32%); z-index: 3; position: relative; }.live-status { color: #ef626a; font-size: 11px; }.live-status i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #ef626a; }.viewers { margin-left: 12px; color: #858792; font-size: 11px; }.hero-live h1 { margin: 12px 0 8px; color: #f7f4ed; font-size: clamp(18px, 2vw, 26px); line-height: 1.25; }.hero-live-info p { margin: 0 0 18px; color: #9899a3; font-size: 12px; }.primary-button, .promo-button { padding: 10px 16px; border-radius: 5px; background: #e8bd43; color: #17130c; font-weight: 700; font-size: 12px; }.primary-button span, .promo-button span { margin-left: 12px; font-size: 16px; }
 .hero-promo { padding: 32px 28px; background: radial-gradient(circle at 90% 20%, color-mix(in srgb, var(--promo-accent), transparent 55%), transparent 38%), linear-gradient(145deg, #28202c, #15161c); }.hero-promo::before { content: "✦"; position: absolute; right: 26px; top: 20px; color: color-mix(in srgb, var(--promo-accent), white 20%); font-size: 70px; opacity: .35; }.promo-eyebrow, .section-kicker { color: #d6ae48; font-size: 10px; letter-spacing: 2px; }.hero-promo h2 { max-width: 250px; margin: 22px 0 12px; font-size: 25px; line-height: 1.25; }.hero-promo p { max-width: 240px; margin: 0 0 25px; color: #a7a2ad; font-size: 12px; line-height: 1.8; }.promo-button { background: transparent; color: #f0ce63; border: 1px solid #a47d29; }.promo-dots { position: absolute; left: 28px; bottom: 20px; display: flex; gap: 6px; }.promo-dots button { width: 20px; height: 3px; padding: 0; border-radius: 2px; background: #55505a; }.promo-dots button.active { background: #f0c955; }.carousel-arrow { position: absolute; top: 50%; background: rgba(255,255,255,.08); border-radius: 50%; width: 25px; height: 25px; color: #ccc; }.carousel-arrow.prev { left: 10px; }.carousel-arrow.next { right: 10px; }
 .section-block { margin-top: 35px; }.section-heading { display: flex; justify-content: space-between; align-items: end; margin-bottom: 16px; }.section-heading h2 { margin: 5px 0 0; font-size: 20px; }.link-button { background: transparent; color: #a6a7b0; font-size: 12px; }.link-button:hover { color: #e6c656; }.link-button span { margin-left: 8px; color: #dfbb4e; }.server-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }.server-card { min-width: 0; padding: 16px; display: flex; align-items: center; gap: 12px; border: 1px solid #282a33; border-radius: 7px; background: rgba(26,27,34,.85); }.server-card:hover, .game-card:hover { border-color: #62552d; transform: translateY(-2px); }.server-icon { flex: 0 0 38px; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 9px; background: linear-gradient(145deg, #463b25, #1d202b); color: #f2c956; font-size: 20px; font-weight: 800; }.server-info { min-width: 0; flex: 1; }.server-title { display: flex; align-items: center; gap: 7px; }.server-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }.status-pill { padding: 2px 5px; border-radius: 3px; color: #65cd94; background: rgba(61,151,104,.16); font-size: 9px; white-space: nowrap; }.status-pill.opening_soon { color: #eac75f; background: rgba(214,171,58,.15); }.server-info p { overflow: hidden; margin: 5px 0 8px; color: #848691; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.tag-list { display: flex; gap: 5px; }.tag-list span { padding: 2px 5px; color: #9d8a5c; background: #29271f; border-radius: 2px; font-size: 9px; }.small-button { padding: 6px 10px; border: 1px solid #63552b; border-radius: 4px; background: transparent; color: #d4b653; font-size: 11px; }.small-button:hover { background: #d4b653; color: #19150d; }
 .game-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }.game-card { overflow: hidden; display: flex; border: 1px solid #282a33; border-radius: 7px; background: #1a1b22; transition: .2s; }.game-cover { position: relative; flex: 0 0 110px; min-height: 112px; display: flex; flex-direction: column; justify-content: center; align-items: center; overflow: hidden; background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--game-accent), white 20%), transparent 32%), linear-gradient(135deg, var(--game-accent), #12141b); }.game-cover small { color: #d1d2d5; font-size: 9px; }.game-emblem { color: #f7dd83; font-size: 38px; font-weight: 900; text-shadow: 2px 2px 0 #51290d; }.new-label { position: absolute; top: 8px; left: 8px; color: #f1c450; font-size: 9px; font-weight: 800; }.game-info { min-width: 0; padding: 18px 15px 12px; flex: 1; }.game-info h3 { display: flex; justify-content: space-between; margin: 0 0 8px; font-size: 15px; }.game-info h3 span { color: #8c8d95; font-weight: 400; }.game-info p { overflow: hidden; margin: 0; color: #92939c; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.game-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 25px; color: #7f8089; font-size: 10px; }.game-meta button { padding: 5px 8px; color: #dfbb4d; background: transparent; border: 1px solid #62552d; border-radius: 3px; font-size: 10px; }.empty-state { padding: 40px; text-align: center; border: 1px dashed #343641; border-radius: 8px; color: #888a94; }.toast-message { position: fixed; z-index: 5; left: 50%; bottom: 28px; transform: translateX(-50%); padding: 11px 18px; border: 1px solid #63572e; border-radius: 7px; background: #28251b; color: #f0d16c; font-size: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.35); }.toast-enter-active, .toast-leave-active { transition: .2s; }.toast-enter-from, .toast-leave-to { opacity: 0; transform: translate(-50%, 10px); }

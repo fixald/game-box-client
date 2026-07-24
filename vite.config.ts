@@ -22,6 +22,11 @@ export default defineConfig(async () => ({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+"/remote": {
+        target: "http://8.136.14.205:8080",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/remote/, ""),
+      },
     },
     hmr: host
       ? {
