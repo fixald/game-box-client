@@ -11,6 +11,8 @@ import ServerSelectView from "./views/games/ServerSelectView.vue";
 import GameDetailView from "./views/games/GameDetailView.vue";
 import GamesView from "./views/games/GamesView.vue";
 import VipView from "./views/vip/VipView.vue";
+// import LiveRoomView from "./views/live/LiveRoomView.vue";
+import LiveView from "./views/live/LiveView.vue";
 import { clearSession, isAuthenticated, saveAccountProfile } from "./utils/auth";
 import { getCurrentAccountInfo } from "./api/account";
 
@@ -27,6 +29,8 @@ const currentView = computed(() => {
   if (hash.value.startsWith("#/games/")) return GameDetailView;
   if (hash.value === "#/games") return GamesView;
   if (hash.value === "#/vip") return VipView;
+  if (hash.value.startsWith("#/live/room/")) return LiveRoomView;
+  if (hash.value === "#/live") return LiveView;
   if (["#/community", "#/news", "#/guild", "#/invite", "#/beauty"].includes(hash.value)) return HomeView;
   if (!authenticated.value) return LoginView;
   return hash.value === "#/tasks" ? TasksView : HomeView;

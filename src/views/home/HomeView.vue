@@ -10,6 +10,7 @@ import { getRecommendedServers, normalizeServerList } from "../../api/servers";
 import { getPopularGames, normalizeGameList } from "../../api/games";
 import { getHomeBanners, normalizeHomeBanners } from "../../api/home";
 import { getLiveRooms, normalizeLiveRooms } from "../../api/live";
+import LiveView from "../live/LiveView.vue";
 
 const channels: Array<{ key: HomeChannel; label: string }> = [
   { key: "follow", label: "关注" },
@@ -111,6 +112,10 @@ const toast = ref("");
 const currentAccount = ref(getCurrentAccount());
 const accountLoading = ref(false);
 const now = ref(Date.now());
+
+const showLiveRoom = ref(false);
+const selectedRoom = ref<typeof feed.value.liveRooms[0] | null>(null);
+const liveViewRef = ref<InstanceType<typeof import("../live/LiveView.vue").default> | null>(null);
 const timer = window.setInterval(() => { now.value = Date.now(); }, 1000);
 
 const currentBanner = computed(() => feed.value.banners[bannerIndex.value]);
@@ -269,6 +274,12 @@ function enterGame(game: RecommendedGame) {
   window.location.hash = `#/games/${encodeURIComponent(game.id)}`;
 }
 
+function enterLiveRoom(room: typeof feed.value.liveRooms[0]) {
+  selectedRoom.value = { ...room };
+  showLiveRoom.value = true;
+  activeNav.value = "直播";
+}
+
 function switchBanner(step: number) {
   const count = feed.value.banners.length;
   bannerIndex.value = (bannerIndex.value + step + count) % count;
@@ -294,6 +305,11 @@ function enterSection(label: string) {
 function logout() {
   clearSession();
   window.location.hash = "#/login";
+}
+
+function exitLiveRoom() {
+  showLiveRoom.value = false;
+  selectedRoom.value = null;
 }
 
 async function goAccount() {
@@ -346,7 +362,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleSearchShortcut
         <div class="user-actions"><button class="message-button" @click="notify(`有 ${feed.messageUnreadCount} 条未读消息`)">♢<i v-if="feed.messageUnreadCount"></i></button><button class="account-button" :class="{ loading: accountLoading }" aria-label="个人中心" :disabled="accountLoading" @click="goAccount"><span class="avatar">{{ currentAccount.slice(0, 1).toUpperCase() }}</span></button><button class="logout-button" @click="logout">退出</button></div>
       </header>
 
-      <main class="home-content" :class="{ 'new-server-mode': activeChannel === 'new-server' }">
+      <main v-if="showLiveRoom && selectedRoom" class="home-content live-room-mode">
+        <LiveView 
+          ref="liveViewRef"
+          :room="selectedRoom"
+          @back="exitLiveRoom"
+        />
+      </main>
+      <main v-else class="home-content" :class="{ 'new-server-mode': activeChannel === 'new-server' }">
         <div class="channel-tabs"><button v-for="channel in channels" :key="channel.key" :class="{ selected: activeChannel === channel.key }" @click="channel.key === 'new-server' ? openNewServerChannel() : activeChannel = channel.key">{{ channel.label }}</button></div>
 
         <section class="hero-grid">
@@ -371,7 +394,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleSearchShortcut
               </template>
               <span class="live-game-label">LIVE · {{ feed.liveRooms[0].gameName }}</span>
             </div>
-            <div class="hero-live-info"><div><span class="live-status"><i></i> 正在直播</span><span class="viewers">{{ feed.liveRooms[0].viewers.toLocaleString() }} 人观看</span></div><h1>{{ feed.liveRooms[0].title }}</h1><p>{{ feed.liveRooms[0].streamerName }} · {{ feed.liveRooms[0].serverName }}</p><button class="primary-button" @click="notify('正在进入直播间…')">进入直播间 <span>→</span></button></div>
+            <div class="hero-live-info"><div><span class="live-status"><i></i> 正在直播</span><span class="viewers">{{ feed.liveRooms[0].viewers.toLocaleString() }} 人观看</span></div><h1>{{ feed.liveRooms[0].title }}</h1><p>{{ feed.liveRooms[0].streamerName }} · {{ feed.liveRooms[0].serverName }}</p><button class="primary-button" @click="enterLiveRoom(feed.liveRooms[0])">进入直播间 <span>→</span></button></div>
           </article>
           <aside class="hero-promo" :style="{ '--promo-accent': currentBanner?.accent }"><span class="promo-eyebrow">{{ currentBanner?.eyebrow }}</span><h2>{{ currentBanner?.title }}</h2><p>{{ currentBanner?.description }}</p><button class="promo-button" @click="notify(currentBanner?.actionLabel ?? '活动详情')">{{ currentBanner?.actionLabel }} <span>→</span></button><div class="promo-dots"><button v-for="(_, index) in feed.banners" :key="index" :class="{ active: bannerIndex === index }" @click="bannerIndex = index"></button></div><button class="carousel-arrow prev" @click="switchBanner(-1)">‹</button><button class="carousel-arrow next" @click="switchBanner(1)">›</button></aside>
         </section>
@@ -392,6 +415,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleSearchShortcut
 .new-server-mode .hero-grid, .new-server-mode .section-block:nth-of-type(3) { display: none; }
 .new-server-mode .section-block:nth-of-type(2) .section-heading h2 { font-size: 0; }
 .new-server-mode .section-block:nth-of-type(2) .section-heading h2::after { content: "新服列表"; font-size: 20px; }
+.live-room-mode { max-width: none; margin: 0; padding: 0; display: flex; flex-direction: column; height: calc(100vh - 64px); }
 :global(*) { box-sizing: border-box; }
 :global(body) { margin: 0; background: #101116; color: #f4f1eb; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
 :global(button), :global(input) { font: inherit; }
