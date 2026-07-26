@@ -13,6 +13,7 @@ import GamesView from "./views/games/GamesView.vue";
 import VipView from "./views/vip/VipView.vue";
 import LiveView from "./views/live/LiveView.vue";
 import LiveRoomView from "./views/live/LiveRoomView.vue";
+
 import { clearSession, isAuthenticated, saveAccountProfile } from "./utils/auth";
 import { getCurrentAccountInfo } from "./api/account";
 
