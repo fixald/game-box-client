@@ -6,6 +6,9 @@ export interface CachedAccountProfile {
   account?: string;
   nickname?: string;
   avatarUrl?: string | null;
+  isStreamer?: boolean;
+  role?: string;
+  roles?: string[];
   vip?: { level?: number };
 }
 

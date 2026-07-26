@@ -6,6 +6,9 @@ export interface AccountResponse {
   user?: {
     account?: string;
     nickname?: string;
+    isStreamer?: boolean;
+    role?: string;
+    roles?: string[];
     vip?: { level?: number; growthValue?: number; growthTarget?: number; expiresAt?: string | null };
     taskUnreadCount?: number;
     messageUnreadCount?: number;

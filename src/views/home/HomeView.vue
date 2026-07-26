@@ -60,7 +60,7 @@ function initHeroHls() {
     heroStreamReady.value = true;
     void video.play().catch(() => { /* autoplay blocked */ });
   });
-  heroHls.on(Hls.Events.ERROR, (_event, data) => {
+  heroHls.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean }) => {
     if (data.fatal) heroStreamError.value = true;
   });
 }
@@ -276,6 +276,10 @@ function switchBanner(step: number) {
 
 function enterSection(label: string) {
   activeNav.value = label;
+  if (label === "直播") {
+    window.location.hash = "#/live";
+    return;
+  }
   if (label === "任务") {
     window.location.hash = "#/tasks";
     return;

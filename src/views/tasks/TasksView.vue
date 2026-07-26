@@ -163,6 +163,7 @@ const activeNav = ref("任务");
 function navigate(label: string) {
   activeNav.value = label;
   if (label === "首页") return goHome();
+  if (label === "直播") return void (window.location.hash = "#/live");
   if (label === "游戏") return goGames();
   if (label === "任务") return goTasks();
   if (label === "SVIP") return void (window.location.hash = "#/vip");

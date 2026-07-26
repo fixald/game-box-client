@@ -36,6 +36,7 @@ function goHome() {
 
 function navigate(label: string) {
   if (label === "首页") window.location.hash = "";
+  else if (label === "直播") window.location.hash = "#/live";
   else if (label === "游戏") window.location.hash = "#/games";
   else if (label === "任务") window.location.hash = "#/tasks";
   else if (label === "SVIP") window.location.hash = "#/vip";

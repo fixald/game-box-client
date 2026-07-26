@@ -15,7 +15,7 @@ const visiblePosts = computed(() => sort.value === "最新" ? [...posts.value].r
 function notify(message: string) { toast.value = message; window.setTimeout(() => toast.value = "", 1800); }
 function toggleLike(post: Post) { post.liked = !post.liked; post.likes += post.liked ? 1 : -1; }
 function publish(type: string) { notify(`${type}功能即将开放，敬请期待`); }
-function navigate(label: string) { if (label === "首页") window.location.hash = "#/"; else if (label === "任务") window.location.hash = "#/tasks"; else if (label === "游戏") window.location.hash = "#/games"; else if (label === "SVIP") window.location.hash = "#/vip"; else if (label !== "社区") notify(`「${label}」页面即将开放`); }
+function navigate(label: string) { if (label === "首页") window.location.hash = "#/"; else if (label === "直播") window.location.hash = "#/live"; else if (label === "任务") window.location.hash = "#/tasks"; else if (label === "游戏") window.location.hash = "#/games"; else if (label === "SVIP") window.location.hash = "#/vip"; else if (label !== "社区") notify(`「${label}」页面即将开放`); }
 </script>
 
 <template>
