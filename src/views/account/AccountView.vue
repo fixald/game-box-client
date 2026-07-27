@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { getAccountStats, getCurrentAccountInfo, getDownloads, getFavoriteGames, getMessages, getRecentGames } from "../../api/account";
+import { createLiveRoom } from "../../api/live";
 import { clearSession, getAccountProfile, getCurrentAccount, saveAccountProfile } from "../../utils/auth";
 
 const profile = ref(getAccountProfile());
@@ -20,6 +21,8 @@ const tabs = [
   { key: "messages", label: "消息中心" }, { key: "settings", label: "其他设置" },
   { key: "live", label: "开启直播", highlight: true },
 ];
+const pushUrl = ref("");
+const roomUrl = ref("");
 const formatDate = (value?: string) => value ? new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-";
 const notify = (value: string) => window.alert(value);
 async function loadAccount() {
@@ -45,7 +48,20 @@ async function loadAccount() {
 }
 function goHome() { window.location.hash = ""; }
 function logout() { clearSession(); window.location.hash = "#/login"; }
-function startLive() { window.alert("直播功能即将开放"); }
+async function startLive() {
+  try {
+    const response = await createLiveRoom({
+      title: `${profile.value?.nickname || account.value}的直播`,
+      streamerName: profile.value?.nickname || account.value,
+      streamerAvatar: profile.value?.avatarUrl,
+    });
+    pushUrl.value = response.pushUrl;
+    roomUrl.value = response.roomUrl;
+    window.alert("直播房间创建成功！");
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : "创建直播房间失败");
+  }
+}
 onMounted(loadAccount);
 </script>
 
@@ -68,10 +84,12 @@ onMounted(loadAccount);
       <template v-else-if="activeTab === 'live'">
         <button class="live-button" @click="startLive">开启直播</button>
         <div class="live-row">
-          <label>直播推流地址</label><input type="text" class="live-input" readonly /></div><div class="live-row">
-          <label>直播观看地址</label><input type="text" class="live-input" readonly />
-          </div>
-        </template>
+          <label>直播推流地址</label><input type="text" class="live-input" readonly :value="pushUrl" />
+        </div>
+        <div class="live-row">
+          <label>直播观看地址</label><input type="text" class="live-input" readonly :value="roomUrl" />
+        </div>
+      </template>
       <template v-else><div v-for="item in ['修改密码', '绑定手机号', '绑定邮箱', '登录设备', '登录记录', '实名认证']" :key="item" class="setting" @click="notify(`${item}功能即将开放`)">{{ item }} →</div></template>
     </main>
     <footer><button @click="logout">退出登录</button><span>账号安全由 game盒子保护</span></footer>

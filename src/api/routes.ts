@@ -26,4 +26,5 @@ export const clientApi = {
   vipLevels: `${CLIENT_API_PREFIX}/vip/levels`,
   banners: `${CLIENT_API_PREFIX}/banners`,
   liveRooms: `${CLIENT_API_PREFIX}/live/rooms`,
+  liveRoom: `${CLIENT_API_PREFIX}/live/room`,
 } as const

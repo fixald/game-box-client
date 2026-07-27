@@ -58,3 +58,34 @@ export function getLiveRooms(page = 1, pageSize = 6, signal?: AbortSignal) {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 }
+
+export interface CreateRoomRequest {
+  title: string;
+  streamerName: string;
+  streamerAvatar?: string;
+  coverUrl?: string;
+  gameId?: number;
+  gameName?: string;
+  serverId?: number;
+  serverName?: string;
+}
+
+export interface CreateRoomResponse {
+  id: string | number;
+  title: string;
+  streamerName: string;
+  pushUrl: string;
+  roomUrl: string;
+}
+
+export async function createLiveRoom(data: CreateRoomRequest): Promise<CreateRoomResponse> {
+  const token = getAccessToken();
+  return apiRequest<CreateRoomResponse>(clientApi.liveRoom, {
+    method: 'POST',
+    headers: { 
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+}
