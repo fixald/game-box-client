@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { getLiveRooms, normalizeLiveRooms } from "../../api/live";
+import { getLiveCategories, getLiveRooms, normalizeLiveRooms, type LiveCategory } from "../../api/live";
 import { getCurrentAccountInfo } from "../../api/account";
 import type { LiveRoom } from "../../types/home";
 import { clearSession, getCurrentAccount } from "../../utils/auth";
@@ -12,7 +12,7 @@ const searchText = ref("");
 const activeCategory = ref("全部");
 const currentAccount = ref(getCurrentAccount());
 const isStreamer = ref(false);
-const categories = ["全部", "单职业", "三职业", "多职业", "1.76", "1.80", "1.85", "1.95", "复古", "沉默", "合击", "火龙", "一合一", "冰雪", "神器", "微变"];
+const categories = ref<LiveCategory[]>([]);
 const navItems = [
   { icon: "⌂", label: "首页" }, { icon: "▶", label: "直播" },
   { icon: "◉", label: "游戏" }, { icon: "✓", label: "任务" }, { icon: "S", label: "SVIP" },
@@ -37,6 +37,16 @@ async function loadRooms() {
     error.value = reason instanceof Error ? reason.message : "直播列表加载失败";
   } finally { loading.value = false; }
 }
+async function loadCategories() {
+  try {
+    const response = await getLiveCategories();
+    categories.value = response.list
+      .filter((category) => category.enabled !== false)
+      .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : "直播分类加载失败";
+  }
+}
 async function loadAccountRole() {
   try {
     const result = await getCurrentAccountInfo();
@@ -59,7 +69,7 @@ function navigate(label: string) {
 }
 function goAccount() { window.location.hash = "#/account"; }
 function logout() { clearSession(); window.location.hash = "#/login"; }
-onMounted(() => { void loadRooms(); void loadAccountRole(); });
+onMounted(() => { void loadRooms(); void loadCategories(); void loadAccountRole(); });
 </script>
 
 <template>
@@ -69,7 +79,7 @@ onMounted(() => { void loadRooms(); void loadAccountRole(); });
       <main class="live-page">
         <section v-if="featuredRoom && !searchText && activeCategory === '全部'" class="featured" @click="openRoom(featuredRoom)"><div class="featured-cover" :style="{ '--accent': featuredRoom.accent }"><img v-if="featuredRoom.coverUrl" :src="featuredRoom.coverUrl" :alt="featuredRoom.title" /><span v-else class="cover-art">▶</span><span class="live-badge"><i></i> LIVE · {{ featuredRoom.viewers.toLocaleString() }} 人观看</span><span class="play">▶</span></div><div class="featured-info"><span class="eyebrow">FEATURED STREAM</span><h2>{{ featuredRoom.title }}</h2><p>{{ featuredRoom.streamerName }} · {{ featuredRoom.gameName }} · {{ featuredRoom.serverName }}</p><button class="primary" @click.stop="openRoom(featuredRoom)">进入直播间 <b>→</b></button></div></section>
         <div v-if="loading" class="state">正在加载直播列表…</div><div v-else-if="error" class="state"><span>{{ error }}</span><button @click="loadRooms">重试</button></div><div v-else-if="!filteredRooms.length" class="state">暂无匹配的直播，换个关键词试试。</div>
-        <section v-else class="room-section"><div class="section-heading"><h2>推荐直播 <b>LIVE</b></h2><span>{{ filteredRooms.length }} 个房间</span></div><nav class="category-tabs" aria-label="直播分类"><button v-for="category in categories" :key="category" :class="{ active: activeCategory === category }" @click="activeCategory = category">{{ category }}</button></nav><div class="room-grid"><article v-for="room in filteredRooms" :key="room.id" class="room-card" @click="openRoom(room)"><div class="room-cover" :style="{ '--accent': room.accent }"><img v-if="room.coverUrl" :src="room.coverUrl" :alt="room.title" /><span v-else class="cover-art">▶</span><span class="room-live"><i></i>直播中</span><span class="viewer-count">{{ room.viewers.toLocaleString() }} 人</span></div><div class="room-info"><div class="streamer"><span class="avatar"><img v-if="room.streamerAvatar" :src="room.streamerAvatar" :alt="room.streamerName" /><span v-else>{{ room.streamerName.slice(0, 1) }}</span></span><div><h3>{{ room.title }}</h3><p>{{ room.streamerName }} · {{ room.gameName }}</p></div></div><span v-if="room.serverName" class="server">{{ room.serverName }}</span></div></article></div></section>
+        <section v-else class="room-section"><div class="section-heading"><h2>推荐直播 <b>LIVE</b></h2><span>{{ filteredRooms.length }} 个房间</span></div><nav class="category-tabs" aria-label="直播分类"><button v-for="category in categories" :key="category.id" :class="{ active: activeCategory === category.name }" @click="activeCategory = category.name">{{ category.name }}</button></nav><div class="room-grid"><article v-for="room in filteredRooms" :key="room.id" class="room-card" @click="openRoom(room)"><div class="room-cover" :style="{ '--accent': room.accent }"><img v-if="room.coverUrl" :src="room.coverUrl" :alt="room.title" /><span v-else class="cover-art">▶</span><span class="room-live"><i></i>直播中</span><span class="viewer-count">{{ room.viewers.toLocaleString() }} 人</span></div><div class="room-info"><div class="streamer"><span class="avatar"><img v-if="room.streamerAvatar" :src="room.streamerAvatar" :alt="room.streamerName" /><span v-else>{{ room.streamerName.slice(0, 1) }}</span></span><div><h3>{{ room.title }}</h3><p>{{ room.streamerName }} · {{ room.gameName }}</p></div></div><span v-if="room.serverName" class="server">{{ room.serverName }}</span></div></article></div></section>
       </main></section>
   </div>
 </template>

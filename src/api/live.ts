@@ -29,6 +29,26 @@ export interface LiveRoomsResponse {
   hasMore?: boolean;
 }
 
+export interface LiveCategory {
+  id: string;
+  name: string;
+  type?: string;
+  sort?: number;
+  enabled?: boolean;
+}
+
+export interface LiveCategoriesResponse {
+  list: LiveCategory[];
+}
+
+export function getLiveCategories(signal?: AbortSignal) {
+  const token = getAccessToken();
+  return apiRequest<LiveCategoriesResponse>(clientApi.liveCategories, {
+    signal,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+}
+
 export function normalizeLiveRooms(response: LiveRoomsResponse): LiveRoom[] {
   return response.list
     .filter((room) => room.status !== "offline")

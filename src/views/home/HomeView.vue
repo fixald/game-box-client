@@ -275,9 +275,7 @@ function enterGame(game: RecommendedGame) {
 }
 
 function enterLiveRoom(room: typeof feed.value.liveRooms[0]) {
-  selectedRoom.value = { ...room };
-  showLiveRoom.value = true;
-  activeNav.value = "直播";
+  window.location.hash = `#/live/${encodeURIComponent(room.id)}`;
 }
 
 function switchBanner(step: number) {
