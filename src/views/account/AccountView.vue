@@ -55,8 +55,10 @@ async function startLive() {
       streamerName: profile.value?.nickname || account.value,
       streamerAvatar: profile.value?.avatarUrl,
     });
-    pushUrl.value = response.pushUrl;
-    roomUrl.value = response.roomUrl;
+    console.log(response)
+    pushUrl.value = response.room.pushUrl;
+    roomUrl.value = response.room.roomUrl;
+    
     window.alert("直播房间创建成功！");
   } catch (e) {
     window.alert(e instanceof Error ? e.message : "创建直播房间失败");
