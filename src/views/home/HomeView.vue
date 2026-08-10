@@ -97,6 +97,8 @@ const serversLoading = ref(false);
 const serversError = ref("");
 const gamesLoading = ref(false);
 const gamesError = ref("");
+const liveRoomsLoading = ref(false);
+const liveRoomsError = ref("");
 const activeNav = ref("首页");
 const searchText = ref("");
 const searchInput = ref<HTMLInputElement | null>(null);
@@ -249,13 +251,17 @@ async function loadHomeBanners() {
 }
 
 async function loadLiveRooms() {
+  liveRoomsLoading.value = true;
+  liveRoomsError.value = "";
   try {
     const response = await getLiveRooms(1, 6);
     feed.value.liveRooms = normalizeLiveRooms(response);
     await nextTick();
     initHeroHls();
-  } catch {
-    // 直播接口不可用时保留当前内容，等待服务端接口上线。
+  } catch (error) {
+    liveRoomsError.value = error instanceof Error ? error.message : "直播间加载失败";
+  } finally {
+    liveRoomsLoading.value = false;
   }
 }
 
@@ -375,7 +381,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleSearchShortcut
         <div class="channel-tabs"><button v-for="channel in channels" :key="channel.key" :class="{ selected: activeChannel === channel.key }" @click="channel.key === 'new-server' ? openNewServerChannel() : activeChannel = channel.key">{{ channel.label }}</button></div>
 
         <section class="hero-grid">
-          <article class="hero-live" :style="{ '--live-accent': feed.liveRooms[0].accent }">
+          <article class="hero-live" :style="{ '--live-accent': feed.liveRooms[0]?.accent ?? '#4d7cff' }">
+            <div v-if="liveRoomsLoading" class="live-art stream-loading" style="background: linear-gradient(135deg, #172338, #05070c 78%);">
+              <div class="stream-loading"><span></span>加载直播间…</div>
+            </div>
+            <div v-else-if="liveRoomsError" class="live-art stream-error" style="background: linear-gradient(135deg, #172338, #05070c 78%);">
+              <div class="stream-error-tip">{{ liveRoomsError }}</div>
+              <button class="small-button" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);" @click="loadLiveRooms">重试</button>
+            </div>
+            <template v-else-if="feed.liveRooms.length > 0">
             <div class="live-art" :class="{ 'has-stream': heroHasStream, 'stream-ready': heroStreamReady, 'stream-error': heroStreamError }">
               <video
                 v-if="heroHasStream"
@@ -394,9 +408,19 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleSearchShortcut
                 <div class="fake-character">⚔</div>
                 <div class="fake-battle">✦　✧　✦</div>
               </template>
-              <span class="live-game-label">LIVE · {{ feed.liveRooms[0].gameName }}</span>
+              <span class="live-game-label">LIVE · {{ feed.liveRooms[0]?.gameName ?? '未知游戏' }}</span>
             </div>
-            <div class="hero-live-info"><div><span class="live-status"><i></i> 正在直播</span><span class="viewers">{{ feed.liveRooms[0].viewers.toLocaleString() }} 人观看</span></div><h1>{{ feed.liveRooms[0].title }}</h1><p>{{ feed.liveRooms[0].streamerName }} · {{ feed.liveRooms[0].serverName }}</p><button class="primary-button" @click="enterLiveRoom(feed.liveRooms[0])">进入直播间 <span>→</span></button></div>
+            <div class="hero-live-info"><div><span class="live-status"><i></i> 正在直播</span><span class="viewers">{{ (feed.liveRooms[0]?.viewers ?? 0).toLocaleString() }} 人观看</span></div><h1>{{ feed.liveRooms[0]?.title ?? '暂无直播' }}</h1><p>{{ feed.liveRooms[0]?.streamerName ?? '未知主播' }} · {{ feed.liveRooms[0]?.serverName ?? '' }}</p><button class="primary-button" @click="enterLiveRoom(feed.liveRooms[0])">进入直播间 <span>→</span></button></div>
+            </template>
+            <template v-else>
+            <div class="live-art" style="background: linear-gradient(135deg, #172338, #05070c 78%);">
+              <div class="art-glow"></div>
+              <div class="fake-character">⚔</div>
+              <div class="fake-battle">✦　✧　✦</div>
+              <span class="live-game-label">LIVE · 暂无直播</span>
+            </div>
+            <div class="hero-live-info"><div><span class="live-status"><i></i> 等待开播</span></div><h1>当前没有正在进行的直播</h1><p>稍后再来看看吧</p></div>
+            </template>
           </article>
           <aside class="hero-promo" :style="{ '--promo-accent': currentBanner?.accent }"><span class="promo-eyebrow">{{ currentBanner?.eyebrow }}</span><h2>{{ currentBanner?.title }}</h2><p>{{ currentBanner?.description }}</p><button class="promo-button" @click="notify(currentBanner?.actionLabel ?? '活动详情')">{{ currentBanner?.actionLabel }} <span>→</span></button><div class="promo-dots"><button v-for="(_, index) in feed.banners" :key="index" :class="{ active: bannerIndex === index }" @click="bannerIndex = index"></button></div><button class="carousel-arrow prev" @click="switchBanner(-1)">‹</button><button class="carousel-arrow next" @click="switchBanner(1)">›</button></aside>
         </section>
