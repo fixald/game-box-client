@@ -70,21 +70,22 @@ export function getLiveCategories(signal?: AbortSignal) {
 }
 
 export function normalizeLiveRooms(response: LiveRoomsResponse): LiveRoom[] {
-  return response.list
+  const list = response?.list ?? [];
+  return list
     .filter((room) => room.status !== "offline")
     .map((room, index) => ({
-      id: String(room.id),
       streamerId: room.streamerId,
+      id: String(room.id ?? `live_${index}`),
       gameId: room.gameId == null ? undefined : String(room.gameId),
       serverId: room.serverId == null ? undefined : String(room.serverId),
-      title: room.title,
-      streamerName: room.streamerName,
+      title: room.title ?? "未命名直播",
+      streamerName: room.streamerName ?? "匿名主播",
       streamerAvatar: room.streamerAvatar,
       coverUrl: room.coverUrl,
       viewers: Number(room.viewers) || 0,
-      gameName: room.gameName,
+      gameName: room.gameName ?? "",
       serverName: room.serverName ?? "",
-      status: room.status === "offline" ? "replay" : room.status,
+      status: room.status === "offline" ? "replay" : (room.status ?? "upcoming"),
       roomUrl: room.roomUrl,
       startedAt: room.startedAt,
       endedAt: room.endedAt,
