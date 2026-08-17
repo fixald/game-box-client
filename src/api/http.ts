@@ -2,6 +2,11 @@ import { clearSession } from "../utils/auth";
 
 const AUTH_PATH_PARTS = ["/auth/login", "/auth/register", "/auth/refresh", "/auth/password/"];
 
+/** Header values are byte strings in fetch; keep generated opaque keys ASCII-safe. */
+export function encodeHeaderValue(value: string): string {
+  return encodeURIComponent(value);
+}
+
 function isAuthRequest(url: string) {
   return AUTH_PATH_PARTS.some((part) => url.includes(part));
 }

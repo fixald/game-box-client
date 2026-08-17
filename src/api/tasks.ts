@@ -1,4 +1,4 @@
-import { apiRequest, apiRequestEnvelope } from "./http";
+import { apiRequest, apiRequestEnvelope, encodeHeaderValue } from "./http";
 import { clientApi } from "./routes";
 import { getAccessToken } from "../utils/auth";
 import type { TasksResponse, UserTask } from "../types/tasks";
@@ -34,5 +34,5 @@ export function claimCheckinReward(level: number) {
 }
 
 export function claimTask(taskId: string) {
-  return apiRequest<{ taskId: string; points: number }>(`${clientApi.tasks}/claim`, { method: "POST", headers: { ...authHeaders(), "X-Request-Id": requestId(), "Idempotency-Key": `task_claim_${taskId}` }, body: JSON.stringify({ taskId }) });
+  return apiRequest<{ taskId: string; points: number }>(`${clientApi.tasks}/claim`, { method: "POST", headers: { ...authHeaders(), "X-Request-Id": requestId(), "Idempotency-Key": `task_claim_${encodeHeaderValue(taskId)}` }, body: JSON.stringify({ taskId }) });
 }

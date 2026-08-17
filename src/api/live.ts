@@ -182,16 +182,11 @@ export function revokeLivePushUrl() {
 
 export async function createLiveRoom(data: CreateRoomRequest): Promise<CreateRoomResponse> {
   const token = getAccessToken();
-  // HTTP headers must be ISO-8859-1 compatible. Encode user-entered fields
-  // before using them in the idempotency key so Chinese titles cannot make
-  // fetch() fail before the request reaches the server.
-  const idempotencyKey = `live_room_create_${encodeURIComponent(data.title.trim())}_${encodeURIComponent(data.gameName || "")}_${encodeURIComponent(data.serverName || "")}`;
   return apiRequest<CreateRoomResponse>(clientApi.liveRoom, {
     method: 'POST',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       'Content-Type': 'application/json',
-      'Idempotency-Key': idempotencyKey,
     },
     body: JSON.stringify(data),
   });
