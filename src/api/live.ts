@@ -160,6 +160,7 @@ export interface CreateRoomResponse {
     title: string;
     streamerName: string;
     pushUrl: string;
+    pushUrlExpiresAt?: string;
     roomUrl: string;
   };
 }

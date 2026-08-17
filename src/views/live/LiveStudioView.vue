@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 import { createLiveRoom, endMyLiveRoom, getMyLiveRoom, heartbeatLiveRoom } from "../../api/live";
 import { getCurrentAccountInfo } from "../../api/account";
 import { clearSession, getAccountProfile, getCurrentAccount, saveAccountProfile } from "../../utils/auth";
@@ -16,6 +17,19 @@ const liveStatus = ref<"idle" | "waiting" | "live" | "ended">("idle");
 const loadingRoom = ref(false);
 const pushUrl = ref("");
 const pushUrlExpiresAt = ref("");
+const nativePushing = ref(false);
+const captureDevices = ref<string[]>([]);
+const cameraDevice = ref("");
+const audioDevice = ref("");
+const captureMode = ref<"camera" | "game">("game");
+const captureState = ref<"idle" | "capturing" | "error">("idle");
+const captureError = ref("");
+const previewVideo = ref<HTMLVideoElement>();
+const cameraVideo = ref<HTMLVideoElement>();
+const gameVideo = ref<HTMLVideoElement>();
+let displayStream: MediaStream | undefined;
+let cameraStream: MediaStream | undefined;
+let mixedStream: MediaStream | undefined;
 let statusTimer: number | undefined;
 const defaultBackground = "/live/studio-background.png";
 const backgroundImage = ref(defaultBackground);
@@ -74,6 +88,44 @@ async function loadProfile() {
 }
 function notify(value: string) { message.value = value; window.setTimeout(() => { message.value = ""; }, 2400); }
 async function copyPushUrl() { if (!pushUrl.value) return; try { await navigator.clipboard.writeText(pushUrl.value); notify("推流地址已复制"); } catch { notify("复制失败，请手动复制"); } }
+async function startNativePush() { if (!pushUrl.value) return notify("请先创建直播间"); try { await invoke("start_native_push", { options: { pushUrl: pushUrl.value, mode: captureMode.value, cameraDevice: cameraDevice.value || undefined, audioDevice: audioDevice.value || undefined } }); nativePushing.value = true; notify("原生推流已启动，等待服务端确认"); } catch (reason) { notify(reason instanceof Error ? reason.message : String(reason)); } }
+async function loadCaptureDevices() { try { captureDevices.value = await invoke<string[]>("list_capture_devices"); cameraDevice.value = captureDevices.value[0] || ""; audioDevice.value = captureDevices.value.find((device) => /microphone|麦克风|audio/i.test(device)) || captureDevices.value[0] || ""; } catch { /* 非 Windows 或 FFmpeg 尚未安装 */ } }
+async function stopNativePush() { try { await invoke("stop_native_push"); } catch { /* 进程已退出 */ } nativePushing.value = false; }
+function stopCapture() {
+  mixedStream?.getTracks().forEach((track) => track.stop());
+  displayStream?.getTracks().forEach((track) => track.stop());
+  cameraStream?.getTracks().forEach((track) => track.stop());
+  mixedStream = undefined; displayStream = undefined; cameraStream = undefined;
+  if (previewVideo.value) { previewVideo.value.srcObject = null; }
+  if (cameraVideo.value) { cameraVideo.value.srcObject = null; }
+  if (gameVideo.value) { gameVideo.value.srcObject = null; }
+  captureState.value = "idle";
+}
+async function startCapture() {
+  if (!navigator.mediaDevices?.getDisplayMedia || !navigator.mediaDevices.getUserMedia) {
+    captureState.value = "error"; captureError.value = "当前环境不支持摄像头、麦克风或屏幕采集"; return;
+  }
+  stopCapture(); captureError.value = "";
+  try {
+    if (captureMode.value === "game") {
+      displayStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: true });
+      displayStream.getVideoTracks()[0]?.addEventListener("ended", stopCapture, { once: true });
+    }
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, audio: true });
+    const videoTracks = (displayStream || cameraStream).getVideoTracks();
+    const audioTracks = cameraStream.getAudioTracks();
+    mixedStream = new MediaStream([...videoTracks, ...audioTracks]);
+    await nextTick();
+    if (previewVideo.value) { previewVideo.value.srcObject = mixedStream; await previewVideo.value.play(); }
+    if (cameraVideo.value) { cameraVideo.value.srcObject = cameraStream; await cameraVideo.value.play(); }
+    if (gameVideo.value && displayStream) { gameVideo.value.srcObject = displayStream; await gameVideo.value.play(); }
+    captureState.value = "capturing";
+    notify(captureMode.value === "game" ? "游戏页面、摄像头和麦克风已连接" : "摄像头和麦克风已连接");
+  } catch (reason) {
+    stopCapture(); captureState.value = "error";
+    captureError.value = reason instanceof DOMException && reason.name === "NotAllowedError" ? "你拒绝了采集权限" : "无法启动采集，请检查设备是否被其他应用占用";
+  }
+}
 async function createRoom() {
   if (!title.value.trim()) return notify("请填写直播标题");
   creating.value = true;
@@ -88,8 +140,8 @@ async function createRoom() {
     roomCreated.value = true;
     liveStatus.value = "waiting";
     pushUrl.value = result.room.pushUrl;
-    void heartbeatLiveRoom().then(() => { liveStatus.value = "live"; }).catch(() => undefined);
-    notify("直播间创建成功，请使用推流地址开始直播");
+    pushUrlExpiresAt.value = result.room.pushUrlExpiresAt || "";
+    notify("直播间创建成功，请将推流地址粘贴到 OBS 或直播伴侣");
   } catch (reason) { notify(reason instanceof Error ? reason.message : "创建直播间失败"); }
   finally { creating.value = false; }
 }
@@ -110,6 +162,7 @@ async function loadCurrentRoom(showError = false) {
 async function endRoom() {
   if (!window.confirm("确定结束当前直播吗？结束后观众将无法继续观看。")) return;
   try {
+    await stopNativePush();
     await endMyLiveRoom();
     roomCreated.value = false;
     liveStatus.value = "ended";
@@ -121,20 +174,28 @@ function goAccount() { window.location.hash = "#/account"; }
 function logout() { clearSession(); window.location.hash = "#/login"; }
 watch([title, gameName, serverName], saveDraft);
 onMounted(() => {
-  loadDraft(); loadBackground(); void loadProfile(); void loadCurrentRoom();
-  statusTimer = window.setInterval(() => { if (roomCreated.value) void heartbeatLiveRoom().then(() => { liveStatus.value = "live"; }).catch(() => void loadCurrentRoom()); }, 30000);
+  loadDraft(); loadBackground(); void loadProfile(); void loadCurrentRoom(); void loadCaptureDevices();
+  statusTimer = window.setInterval(() => {
+    if (roomCreated.value) void heartbeatLiveRoom().then(() => void loadCurrentRoom()).catch(() => void loadCurrentRoom());
+  }, 30000);
 });
 onUnmounted(() => { if (statusTimer) window.clearInterval(statusTimer); });
+onUnmounted(() => { stopCapture(); void stopNativePush(); });
 </script>
 
 <template>
-  <section v-if="roomCreated && pushUrl" class="address-card"><div class="address-title"><h2>推流地址</h2><button type="button" @click="copyPushUrl">复制</button></div><input :value="pushUrl" readonly /><small v-if="pushUrlExpiresAt">有效期：{{ pushUrlExpiresAt }}</small></section>
-  <div class="studio-page"><header class="studio-top"><button @click="goLive">← 返回直播</button><div class="studio-brand"><small>LIVE STUDIO</small><strong>我要直播</strong></div><div class="studio-actions"><button @click="goAccount">个人中心</button><button class="avatar" @click="goAccount">{{ account.slice(0, 1).toUpperCase() }}</button><button @click="logout">退出</button></div></header><main class="studio-main"><section class="studio-title"><div><span class="eyebrow">LIVE STUDIO</span><h1>开启你的直播</h1><p>创建直播间，直播地址由系统自动生成。</p></div><span class="status" :class="{ ready: liveStatus === 'live' || liveStatus === 'waiting' }"><i></i>{{ liveStatus === "live" ? "正在直播" : liveStatus === "waiting" ? "等待推流" : liveStatus === "ended" ? "直播已结束" : "等待开播" }}</span></section><section class="studio-grid"><div class="preview-card"><div class="preview-screen" :style="{ backgroundImage: `linear-gradient(180deg, rgba(7,10,18,.12), rgba(7,10,18,.72)), url('${backgroundImage}')` }"><span class="play-mark">▶</span><strong>{{ title || "你的直播预览" }}</strong><small>{{ gameName || "选择游戏后开始直播" }}</small><div class="background-actions"><button type="button" @click="chooseBackground">更换背景</button><button type="button" @click="resetBackground">恢复默认</button><input ref="backgroundInput" type="file" accept="image/png,image/jpeg,image/webp" hidden @change="handleBackgroundChange" /></div></div><div class="preview-footer"><span>主播：{{ profile?.nickname || account }}</span><span>{{ liveStatus === "live" ? "正在直播" : liveStatus === "waiting" ? "等待推流" : "未开始" }}</span></div></div><form class="setup-card" @submit.prevent="createRoom"><h2>直播设置</h2><label>直播标题<input v-model="title" maxlength="60" placeholder="例如：新区冲榜，今晚冲击全服第一" /></label><label>游戏名称<input v-model="gameName" placeholder="请输入正在直播的游戏" /></label><label>区服名称<input v-model="serverName" placeholder="请输入区服，可选" /></label><button class="create-button" type="submit" :disabled="creating || roomCreated">{{ creating ? "创建中…" : roomCreated ? "直播间已创建" : "创建直播间" }}</button><button v-if="roomCreated" type="button" class="end-button" :disabled="loadingRoom" @click="endRoom">{{ loadingRoom ? "处理中…" : "结束直播" }}</button><p class="hint">创建后，系统会自动生成直播所需配置。</p></form></section></main><p v-if="message" class="toast">{{ message }}</p></div>
+  <section v-if="roomCreated && pushUrl" class="address-card"><div class="address-title"><div><h2>推流地址</h2><p>原生 FFmpeg 推流模块可直接采集并推送到此地址。</p></div><div class="address-actions"><button type="button" @click="copyPushUrl">复制地址</button><button type="button" :disabled="nativePushing" @click="startNativePush">{{ nativePushing ? "推流中" : "开始原生推流" }}</button><button v-if="nativePushing" type="button" @click="stopNativePush">停止推流</button></div></div><input :value="pushUrl" readonly /><small v-if="pushUrlExpiresAt">有效期：{{ pushUrlExpiresAt }}</small><small v-else>地址已生成，等待推流工具连接</small></section>
+  <div class="studio-page"><header class="studio-top"><button @click="goLive">← 返回直播</button><div class="studio-brand"><small>LIVE STUDIO</small><strong>我要直播</strong></div><div class="studio-actions"><button @click="goAccount">个人中心</button><button class="avatar" @click="goAccount">{{ account.slice(0, 1).toUpperCase() }}</button><button @click="logout">退出</button></div></header><main class="studio-main"><section class="studio-title"><div><span class="eyebrow">LIVE STUDIO</span><h1>开启你的直播</h1><p>电脑端支持摄像头、麦克风和游戏页面采集。</p></div><span class="status" :class="{ ready: liveStatus === 'live' || liveStatus === 'waiting' }"><i></i>{{ liveStatus === "live" ? "正在直播" : liveStatus === "waiting" ? "等待推流" : liveStatus === "ended" ? "直播已结束" : "等待开播" }}</span></section><section class="studio-grid"><div class="preview-card"><div class="preview-screen" :class="{ 'has-capture': captureState === 'capturing' }" :style="{ backgroundImage: captureState === 'capturing' ? undefined : `linear-gradient(180deg, rgba(7,10,18,.12), rgba(7,10,18,.72)), url('${backgroundImage}')` }"><video v-if="captureState === 'capturing'" ref="previewVideo" class="capture-preview" autoplay muted playsinline></video><template v-else><span class="play-mark">▶</span><strong>{{ title || "你的直播预览" }}</strong><small>{{ gameName || "选择游戏后开始直播" }}</small></template><div class="background-actions"><button type="button" @click="chooseBackground">更换背景</button><button type="button" @click="resetBackground">恢复默认</button><input ref="backgroundInput" type="file" accept="image/png,image/jpeg,image/webp" hidden @change="handleBackgroundChange" /></div></div><div class="capture-controls"><label><input v-model="captureMode" type="radio" value="game" /> 游戏页面</label><label><input v-model="captureMode" type="radio" value="camera" /> 摄像头</label><button type="button" @click="captureState === 'capturing' ? stopCapture() : startCapture()">{{ captureState === "capturing" ? "停止采集" : "开始采集" }}</button></div><p v-if="captureError" class="capture-error">{{ captureError }}</p><div class="preview-footer"><span>主播：{{ profile?.nickname || account }}</span><span>{{ captureState === "capturing" ? "采集预览中" : liveStatus === "waiting" ? "等待推流" : "未开始" }}</span></div></div><form class="setup-card" @submit.prevent="createRoom"><h2>直播设置</h2><label>直播标题<input v-model="title" maxlength="60" placeholder="例如：新区冲榜，今晚冲击全服第一" /></label><label>游戏名称<input v-model="gameName" placeholder="请输入正在直播的游戏" /></label><label>区服名称<input v-model="serverName" placeholder="请输入区服，可选" /></label><button class="create-button" type="submit" :disabled="creating || roomCreated">{{ creating ? "创建中…" : roomCreated ? "直播间已创建" : "创建直播间" }}</button><button v-if="roomCreated" type="button" class="end-button" :disabled="loadingRoom" @click="endRoom">{{ loadingRoom ? "处理中…" : "结束直播" }}</button><p class="hint">创建房间后，再启动采集；当前页面负责设备预览和权限管理。</p></form></section></main><p v-if="message" class="toast">{{ message }}</p></div>
+<video v-if="captureState === 'capturing'" ref="cameraVideo" class="camera-overlay" autoplay muted playsinline></video>
 </template>
 
 <style scoped>
 .background-actions{display:flex;gap:8px;margin-top:8px;opacity:0;transition:.2s}.preview-screen:hover .background-actions{opacity:1}.background-actions button{padding:6px 9px;border:1px solid rgba(232,189,67,.65);border-radius:4px;color:#f0cc62;background:rgba(12,14,20,.72);font-size:10px}.background-actions button:hover{background:rgba(67,52,18,.88)}
 .end-button{padding:10px;border:1px solid #744047;border-radius:5px;color:#df858b;background:rgba(93,38,46,.35);font-size:12px}.end-button:hover{background:rgba(112,44,52,.55)}.end-button:disabled{opacity:.55;cursor:not-allowed}
+.capture-preview{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#050608}.preview-screen.has-capture{background:#050608!important}.capture-controls{display:flex;align-items:center;gap:12px;padding:12px 2px 0;color:#a6a7b0;font-size:11px}.capture-controls label{display:flex;align-items:center;gap:5px}.capture-controls button{margin-left:auto;padding:7px 11px;border:1px solid #65552c;border-radius:4px;color:#e3bf54;font-size:11px}.capture-error{margin:8px 2px 0;color:#df858b;font-size:11px}
+.address-actions{display:flex;gap:8px}.address-actions button{padding:7px 10px;border:1px solid #61512a;border-radius:4px;color:#dfbb51;font-size:11px}.address-actions button:disabled{opacity:.5;cursor:not-allowed}
+.camera-overlay{position:fixed;z-index:30;left:max(6vw,24px);top:145px;width:min(210px,18vw);aspect-ratio:4/5;object-fit:cover;border:2px solid #d5ae4b;border-radius:6px;background:#111;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.broadcast-title{position:absolute;top:10px;left:14px;right:14px;z-index:4;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.35);color:#252525;text-align:center;font-size:14px;font-weight:700}.preview-screen.has-capture .broadcast-title{color:#f4f1eb}.host-placeholder{display:block;padding:14px;color:#777;font-size:11px}.game-placeholder{color:#888;font-size:18px}
 </style>
 
 <style scoped>
