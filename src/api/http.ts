@@ -24,8 +24,13 @@ export async function apiRequest<T>(url: string, options: RequestInit = {}): Pro
   });
   const body = await response.json().catch(() => null);
   const redirected = redirectToLogin(url, body, response.status);
-  if (!response.ok || !body || ![0, 200].includes(body.code)) {
-    throw new Error(redirected ? "登录状态已失效，请重新登录" : body?.message || body?.msg || "网络请求失败");
+  const code = body?.code;
+  const codeNum = typeof code === "number" ? code : Number(code);
+  if (!response.ok || !body || ![0, 200].includes(codeNum)) {
+    const error = new Error(redirected ? "登录状态已失效，请重新登录" : body?.message || body?.msg || "网络请求失败") as Error & { status?: number; code?: number };
+    error.status = response.status;
+    error.code = codeNum;
+    throw error;
   }
   return body.data as T;
 }
@@ -34,6 +39,8 @@ export async function apiRequestEnvelope<T>(url: string, options: RequestInit = 
   const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
   const body = await response.json().catch(() => null);
   const redirected = redirectToLogin(url, body, response.status);
-  if (!response.ok || !body || ![0, 200].includes(body.code)) throw new Error(redirected ? "登录状态已失效，请重新登录" : body?.message || body?.msg || "网络请求失败");
+  const code = body?.code;
+  const codeNum = typeof code === "number" ? code : Number(code);
+  if (!response.ok || !body || ![0, 200].includes(codeNum)) throw new Error(redirected ? "登录状态已失效，请重新登录" : body?.message || body?.msg || "网络请求失败");
   return body as T;
 }

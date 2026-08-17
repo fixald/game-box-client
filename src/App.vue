@@ -13,6 +13,7 @@ import GamesView from "./views/games/GamesView.vue";
 import VipView from "./views/vip/VipView.vue";
 import LiveView from "./views/live/LiveView.vue";
 import LiveRoomView from "./views/live/LiveRoomView.vue";
+import LiveStudioView from "./views/live/LiveStudioView.vue";
 
 import { clearSession, isAuthenticated, saveAccountProfile } from "./utils/auth";
 import { getCurrentAccountInfo } from "./api/account";
@@ -21,7 +22,7 @@ const hash = ref(window.location.hash || (isAuthenticated() ? "" : "#/login"));
 const authenticated = ref(isAuthenticated());
 const checkingSession = ref(authenticated.value);
 const currentView = computed(() => {
-  if (hash.value === "#/account") return authenticated.value ? AccountView : LoginView;
+  if (hash.value === "#/account" || hash.value.startsWith("#/account?")) return authenticated.value ? AccountView : LoginView;
   if (hash.value === "#/register") return RegisterView;
   if (hash.value === "#/login") return LoginView;
   if (hash.value === "#/forgot-password") return ForgotPasswordView;
@@ -30,6 +31,7 @@ const currentView = computed(() => {
   if (hash.value.startsWith("#/games/")) return GameDetailView;
   if (hash.value === "#/games") return GamesView;
   if (hash.value === "#/vip") return VipView;
+  if (hash.value === "#/live/create") return LiveStudioView;
   if (hash.value.startsWith("#/live/")) return LiveRoomView;
   if (hash.value === "#/live") return LiveView;
   if (["#/community", "#/news", "#/guild", "#/invite", "#/beauty"].includes(hash.value)) return HomeView;

@@ -2,6 +2,7 @@ export type HomeChannel = "follow" | "recommend" | "new-server";
 
 export interface LiveRoom {
   id: string;
+  streamerId?: string;
   gameId?: string;
   serverId?: string;
   title: string;
@@ -11,10 +12,14 @@ export interface LiveRoom {
   viewers: number;
   gameName: string;
   serverName: string;
-  status: "live" | "upcoming" | "replay";
+  status: "live" | "pending" | "upcoming" | "replay" | "ended";
   roomUrl?: string;
   startedAt?: string;
   endedAt?: string | null;
+  announcement?: string;
+  isFollowed?: boolean;
+  categoryId?: string;
+  categoryName?: string;
   accent: string;
 }
 

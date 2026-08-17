@@ -15,7 +15,7 @@ export interface LiveRoomResponse {
   gameName: string;
   serverId?: string | number;
   serverName?: string;
-  status: "live" | "upcoming" | "replay" | "offline";
+  status: "live" | "pending" | "upcoming" | "replay" | "offline" | "ended";
   roomUrl?: string;
   startedAt?: string;
   endedAt?: string | null;
@@ -165,17 +165,33 @@ export interface CreateRoomResponse {
 }
 
 export interface MyLiveRoomResponse {
-  room: LiveRoomResponse & { pushUrl?: string; roomUrl?: string };
+  room: LiveRoomResponse & { pushUrl?: string; pushUrlExpiresAt?: string; lastHeartbeatAt?: string; roomUrl?: string };
+}
+
+export interface LiveHeartbeatResponse { roomId: string; status: "live"; heartbeatAt: string }
+
+export function heartbeatLiveRoom() {
+  const token = getAccessToken();
+  return apiRequest<LiveHeartbeatResponse>(clientApi.liveHeartbeat, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {} });
+}
+
+export function revokeLivePushUrl() {
+  const token = getAccessToken();
+  return apiRequest<{ revokedAt: string }>(clientApi.liveRevokePushUrl, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {} });
 }
 
 export async function createLiveRoom(data: CreateRoomRequest): Promise<CreateRoomResponse> {
   const token = getAccessToken();
+  // HTTP headers must be ISO-8859-1 compatible. Encode user-entered fields
+  // before using them in the idempotency key so Chinese titles cannot make
+  // fetch() fail before the request reaches the server.
+  const idempotencyKey = `live_room_create_${encodeURIComponent(data.title.trim())}_${encodeURIComponent(data.gameName || "")}_${encodeURIComponent(data.serverName || "")}`;
   return apiRequest<CreateRoomResponse>(clientApi.liveRoom, {
     method: 'POST',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       'Content-Type': 'application/json',
-      'Idempotency-Key': `live_room_create_${data.title.trim()}_${data.gameName || ''}_${data.serverName || ''}`,
+      'Idempotency-Key': idempotencyKey,
     },
     body: JSON.stringify(data),
   });
